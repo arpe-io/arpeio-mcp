@@ -1,0 +1,25 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.arpe-io/arpeio-mcp",
+  "description": "Unified MCP server for Arpe.io data tools — FastBCP (export), FastTransfer (transfer), LakeXpress (data lake), MigratorXpress (migration)",
+  "repository": {
+    "url": "https://github.com/arpe-io/arpeio-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "arpeio-mcp",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        { "name": "FASTBCP_PATH", "description": "Path to FastBCP binary (optional — preview-only mode without it)", "isRequired": false, "format": "string", "isSecret": false },
+        { "name": "FASTTRANSFER_PATH", "description": "Path to FastTransfer binary (optional)", "isRequired": false, "format": "string", "isSecret": false },
+        { "name": "LAKEXPRESS_PATH", "description": "Path to LakeXpress binary (optional)", "isRequired": false, "format": "string", "isSecret": false },
+        { "name": "MIGRATORXPRESS_PATH", "description": "Path to MigratorXpress binary (optional)", "isRequired": false, "format": "string", "isSecret": false },
+        { "name": "LOG_LEVEL", "description": "Logging level: DEBUG, INFO, WARNING, ERROR (default: INFO)", "isRequired": false, "format": "string" }
+      ]
+    }
+  ]
+}
