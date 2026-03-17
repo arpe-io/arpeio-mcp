@@ -4,7 +4,7 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from mcp.server.sse import SseServerTransport
-from src.server import app
+from src.server import app, all_tools, tool_handlers
 
 sse = SseServerTransport("/messages/")
 
@@ -19,9 +19,17 @@ async def handle_sse(request):
 async def health(request):
     return JSONResponse({"status": "ok"})
 
+async def debug(request):
+    return JSONResponse({
+        "tools_count": len(all_tools),
+        "tool_names": [t.name for t in all_tools],
+        "handlers_count": len(tool_handlers),
+    })
+
 starlette_app = Starlette(
     routes=[
         Route("/", endpoint=health),
+        Route("/debug", endpoint=debug),
         Route("/sse", endpoint=handle_sse),
         Mount("/messages/", app=sse.handle_post_message),
     ],

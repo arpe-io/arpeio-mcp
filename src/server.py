@@ -126,17 +126,20 @@ async def list_tools() -> list[Tool]:
 @app.call_tool()
 async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     """Handle tool calls by dispatching to the appropriate handler."""
+    logger.info(f"call_tool invoked: name={name!r}, handlers={len(tool_handlers)}, tools={len(all_tools)}")
     try:
         # Meta tool
         if name == "arpe_get_status":
             return await handle_arpe_status()
 
         # Try each registered handler
-        for handler in tool_handlers:
+        for i, handler in enumerate(tool_handlers):
             result = await handler(name, arguments)
+            logger.info(f"  handler[{i}] returned: {result is not None}")
             if result is not None:
                 return result
 
+        logger.warning(f"No handler matched tool '{name}'")
         return [TextContent(type="text", text=f"Error: Unknown tool '{name}'")]
 
     except Exception as e:
