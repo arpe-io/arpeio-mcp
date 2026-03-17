@@ -99,6 +99,20 @@ All binary paths are optional. Missing binaries activate **preview-only mode** f
 ### Meta (1 tool)
 - `arpe_get_status` — Status of all tools (installed/preview-only)
 
+## Remote MCP Server
+
+A hosted version is available on Hugging Face Spaces. No installation required:
+
+```json
+{
+  "mcpServers": {
+    "arpeio": {
+      "url": "https://arpe-io-arpeio-mcp.hf.space/sse"
+    }
+  }
+}
+```
+
 ## License
 
 MIT

@@ -1,15 +1,11 @@
 """Run the Arpe.io MCP server with SSE transport."""
-
 import uvicorn
 from starlette.applications import Starlette
 from starlette.routing import Mount, Route
-
 from mcp.server.sse import SseServerTransport
-
 from src.server import app
 
 sse = SseServerTransport("/messages/")
-
 
 async def handle_sse(request):
     async with sse.connect_sse(
@@ -18,7 +14,6 @@ async def handle_sse(request):
         await app.run(
             streams[0], streams[1], app.create_initialization_options()
         )
-
 
 starlette_app = Starlette(
     routes=[
