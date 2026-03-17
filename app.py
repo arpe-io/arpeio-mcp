@@ -8,10 +8,10 @@ from src.server import app, all_tools, tool_handlers
 
 sse = SseServerTransport("/messages/")
 
-# Raw ASGI callable — mounted via Mount() so Starlette passes
-# (scope, receive, send) directly instead of wrapping in a Request.
-async def handle_sse(scope, receive, send):
-    async with sse.connect_sse(scope, receive, send) as streams:
+async def handle_sse(request):
+    async with sse.connect_sse(
+        request.scope, request.receive, request._send
+    ) as streams:
         await app.run(
             streams[0], streams[1], app.create_initialization_options()
         )
@@ -30,7 +30,7 @@ starlette_app = Starlette(
     routes=[
         Route("/", endpoint=health),
         Route("/debug", endpoint=debug),
-        Mount("/sse", app=handle_sse),
+        Route("/sse", endpoint=handle_sse),
         Mount("/messages/", app=sse.handle_post_message),
     ],
 )
