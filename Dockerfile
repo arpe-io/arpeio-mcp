@@ -1,5 +1,6 @@
 FROM python:3.11-slim
-RUN pip install --no-cache-dir arpeio-mcp uvicorn starlette
-COPY app.py .
+COPY . /app
+WORKDIR /app
+RUN pip install --no-cache-dir . uvicorn starlette
 EXPOSE 7860
 CMD ["python", "app.py"]

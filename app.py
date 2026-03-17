@@ -8,10 +8,11 @@ from src.server import app, all_tools, tool_handlers
 
 sse = SseServerTransport("/messages/")
 
-async def handle_sse(request):
-    async with sse.connect_sse(
-        request.scope, request.receive, request._send
-    ) as streams:
+# Must be a raw ASGI callable (scope, receive, send), not a Starlette
+# request handler. connect_sse writes directly to send and returns None,
+# which Starlette would try to call as a Response, causing TypeError.
+async def handle_sse(scope, receive, send):
+    async with sse.connect_sse(scope, receive, send) as streams:
         await app.run(
             streams[0], streams[1], app.create_initialization_options()
         )
