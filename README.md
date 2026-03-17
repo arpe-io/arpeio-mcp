@@ -1,3 +1,12 @@
+---
+title: Arpeio MCP
+emoji: 🛠️
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+---
+
 # arpeio-mcp
 
 <!-- mcp-name: io.github.arpe-io/arpeio-mcp -->
