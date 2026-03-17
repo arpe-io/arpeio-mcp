@@ -784,7 +784,7 @@ def create_tools(
             elif name == "fasttransfer_get_version":
                 return await handle_get_version(arguments)
             else:
-                return [TextContent(type="text", text=f"Error: Unknown tool '{name}'")]
+                return None
         except Exception as e:
             logger.exception(f"Error handling tool '{name}': {e}")
             return [TextContent(type="text", text=f"Error: {str(e)}")]
