@@ -1,6 +1,7 @@
 """Run the Arpe.io MCP server with SSE transport."""
 import uvicorn
 from starlette.applications import Starlette
+from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from mcp.server.sse import SseServerTransport
 from src.server import app
@@ -15,8 +16,12 @@ async def handle_sse(request):
             streams[0], streams[1], app.create_initialization_options()
         )
 
+async def health(request):
+    return JSONResponse({"status": "ok"})
+
 starlette_app = Starlette(
     routes=[
+        Route("/", endpoint=health),
         Route("/sse", endpoint=handle_sse),
         Mount("/messages/", app=sse.handle_post_message),
     ],
