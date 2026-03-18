@@ -37,7 +37,7 @@ class BaseCommandBuilder(ABC):
         if self._preview_only:
             self._version_detector = self._create_version_detector()
             self._version_detector._detection_done = True
-            logger.info(f"{self.PRODUCT_NAME}: Running in preview-only mode (binary not found)")
+            logger.info(f"{self.PRODUCT_NAME}: Running in command builder mode (binary not configured)")
         else:
             self._version_detector = self._create_version_detector()
             detected = self._version_detector.detect()
@@ -56,15 +56,15 @@ class BaseCommandBuilder(ABC):
 
     def _validate_binary(self) -> None:
         if not self.binary_path.exists():
-            logger.warning(f"{self.PRODUCT_NAME} binary not found at: {self.binary_path}. Entering preview-only mode. Install from {self.DOWNLOAD_URL}")
+            logger.warning(f"{self.PRODUCT_NAME} binary not found at: {self.binary_path}. Set {self.PRODUCT_NAME.upper().replace(' ', '')}_PATH to enable execution. Download from {self.DOWNLOAD_URL}")
             self._preview_only = True
             return
         if not self.binary_path.is_file():
-            logger.warning(f"{self.PRODUCT_NAME} path is not a file: {self.binary_path}. Entering preview-only mode. Install from {self.DOWNLOAD_URL}")
+            logger.warning(f"{self.PRODUCT_NAME} path is not a file: {self.binary_path}. Set {self.PRODUCT_NAME.upper().replace(' ', '')}_PATH to enable execution. Download from {self.DOWNLOAD_URL}")
             self._preview_only = True
             return
         if not os.access(self.binary_path, os.X_OK):
-            logger.warning(f"{self.PRODUCT_NAME} binary is not executable: {self.binary_path}. Entering preview-only mode. Install from {self.DOWNLOAD_URL}")
+            logger.warning(f"{self.PRODUCT_NAME} binary is not executable: {self.binary_path}. Set {self.PRODUCT_NAME.upper().replace(' ', '')}_PATH to enable execution. Download from {self.DOWNLOAD_URL}")
             self._preview_only = True
             return
 
@@ -83,7 +83,7 @@ class BaseCommandBuilder(ABC):
             return {
                 "preview_only": True,
                 "binary_path": str(self.binary_path),
-                "message": f"Binary not found. Install from {self.DOWNLOAD_URL}",
+                "message": f"Set binary path to enable execution. Download from {self.DOWNLOAD_URL}",
                 "version": None,
                 "detected": False,
                 "capabilities": self._get_version_capabilities(caps),
@@ -112,9 +112,18 @@ class BaseCommandBuilder(ABC):
                 masked.append(part)
         return masked
 
-    def format_command_display(self, command: List[str], mask: bool = True) -> str:
+    def format_command_display(self, command: List[str], mask: bool = True, os_type: str = "linux") -> str:
         display_cmd = self.mask_password(command) if mask else command
-        formatted_parts = [display_cmd[0]]
+
+        # Adjust binary path for Windows
+        if os_type == "windows":
+            binary = display_cmd[0].replace("/", "\\")
+            if not binary.endswith(".exe"):
+                binary += ".exe"
+            formatted_parts = [binary]
+        else:
+            formatted_parts = [display_cmd[0]]
+
         i = 1
         while i < len(display_cmd):
             if i < len(display_cmd) - 1 and display_cmd[i].startswith("-") and not display_cmd[i + 1].startswith("-"):
@@ -128,6 +137,10 @@ class BaseCommandBuilder(ABC):
             else:
                 formatted_parts.append(display_cmd[i])
                 i += 1
+
+        # Windows uses ^ for line continuation, Linux uses \
+        if os_type == "windows":
+            return " ^\n  ".join(formatted_parts)
         return " \\\n  ".join(formatted_parts)
 
     def execute_command(self, command: List[str], timeout: Optional[int] = None, log_dir: Optional[Path] = None) -> Tuple[int, str, str]:
@@ -136,8 +149,8 @@ class BaseCommandBuilder(ABC):
 
         if self._preview_only:
             raise ArpeToolError(
-                f"Server is in preview-only mode (binary not found at {self.binary_path}). "
-                f"Install the binary from {self.DOWNLOAD_URL} to enable execution."
+                f"Execution requires the {self.PRODUCT_NAME} binary. "
+                f"Set the binary path or download from {self.DOWNLOAD_URL}"
             )
 
         start_time = datetime.now()

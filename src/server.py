@@ -84,7 +84,7 @@ def _init_tool(name, builder_cls, create_tools_fn, config):
     try:
         builder = builder_cls(config["path"])
         if builder.preview_only:
-            logger.warning(f"{name}: binary not found at {config['path']} — preview-only mode")
+            logger.warning(f"{name}: binary not configured — execution disabled, command building available")
         else:
             version_info = builder.get_version()
             if version_info["detected"]:
@@ -111,7 +111,7 @@ _init_tool("MigratorXpress", MigratorXpressCommandBuilder, create_migratorxpress
 all_tools.append(
     Tool(
         name="arpe_get_status",
-        description="Get the status of all Arpe.io tools (installed/preview-only, version, capabilities summary)",
+        description="Get the status of all Arpe.io tools (installed/command-builder-only, version, capabilities summary)",
         inputSchema={"type": "object", "properties": {}},
     )
 )
@@ -168,8 +168,8 @@ async def handle_arpe_status() -> list[TextContent]:
         try:
             builder = builder_cls(config["path"])
             if builder.preview_only:
-                response.append("- **Status**: Preview-only (binary not found)")
-                response.append("- **Install**: https://arpe.io")
+                response.append("- **Status**: Command builder (execution not available)")
+                response.append("- **Download**: https://arpe.io")
             else:
                 version_info = builder.get_version()
                 version_str = version_info.get("version", "Unknown")

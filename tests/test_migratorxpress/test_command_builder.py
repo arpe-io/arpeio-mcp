@@ -111,7 +111,7 @@ class TestCommandBuilder:
 
         with pytest.raises(ArpeToolError) as exc_info:
             builder.execute_command(["test"])
-        assert "preview-only mode" in str(exc_info.value)
+        assert "Execution requires the" in str(exc_info.value)
         assert "https://arpe.io" in str(exc_info.value)
 
     def test_preview_only_get_version(self):
@@ -121,7 +121,7 @@ class TestCommandBuilder:
 
         info = builder.get_version()
         assert info["preview_only"] is True
-        assert info["message"] == "Binary not found. Install from https://arpe.io"
+        assert "Set binary path" in info["message"]
         assert info["version"] is None
         assert info["detected"] is False
         assert "capabilities" in info

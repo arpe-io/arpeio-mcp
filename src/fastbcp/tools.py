@@ -319,6 +319,12 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                         "type": "string",
                         "description": "Path to a YAML configuration file (--config parameter, requires FastBCP 0.30+)",
                     },
+                    "os_type": {
+                        "type": "string",
+                        "enum": ["linux", "windows"],
+                        "description": "Target operating system for command formatting",
+                        "default": "linux",
+                    },
                 },
                 "required": ["source", "output"],
             },
@@ -463,6 +469,9 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             ]
 
         try:
+            # Extract os_type before passing to ExportRequest (not part of the model)
+            os_type = arguments.pop("os_type", "linux")
+
             # Extract config_file before passing to ExportRequest (not part of the model)
             config_file = arguments.pop("config_file", None)
 
@@ -480,7 +489,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             command = command_builder.build_command(request, config_file=config_file)
 
             # Format for display (with masked passwords)
-            display_command = command_builder.format_command_display(command, mask=True)
+            display_command = command_builder.format_command_display(command, mask=True, os_type=os_type)
 
             # Create explanation
             explanation = _build_export_explanation(request)
@@ -493,10 +502,9 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
 
             if command_builder._preview_only:
                 response += [
-                    "**NOTE: Server is in preview-only mode** (binary not found at "
-                    f"{command_builder.binary_path}). "
-                    "Command preview is available but execution is disabled. "
-                    "Install the binary from https://arpe.io to enable execution.",
+                    "**NOTE: Execution is not available** (binary not configured). "
+                    "Command preview is available. "
+                    "Download from https://arpe.io to enable execution.",
                     "",
                 ]
 
@@ -569,8 +577,8 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 TextContent(
                     type="text",
                     text=(
-                        f"Server is in preview-only mode (binary not found at {command_builder.binary_path}). "
-                        "Install the binary from https://arpe.io to enable execution."
+                        "Execution requires the FastBCP binary. "
+                        "Download from https://arpe.io and set FASTBCP_PATH to enable."
                     ),
                 )
             ]
@@ -843,7 +851,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
 
         if version_info.get("preview_only"):
             response += [
-                "**Mode**: Preview-only (binary not found)",
+                "**Mode**: Command builder (execution not available)",
                 f"**Binary Path**: {version_info['binary_path']}",
                 f"**Message**: {version_info['message']}",
                 "",

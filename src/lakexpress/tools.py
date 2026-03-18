@@ -999,6 +999,12 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                         },
                         "required": ["auth_file", "log_db_auth_id", "sync_id"],
                     },
+                    "os_type": {
+                        "type": "string",
+                        "enum": ["linux", "windows"],
+                        "description": "Target operating system for command formatting",
+                        "default": "linux",
+                    },
                 },
                 "required": ["command"],
             },
@@ -1085,6 +1091,9 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             ]
 
         try:
+            # Extract os_type before passing to LakeXpressRequest (not part of the model)
+            os_type = arguments.pop("os_type", "linux")
+
             # Auto-fill fastbcp_dir_path from env var if not explicitly provided
             if fastbcp_dir_path:
                 for key in ("config_create", "sync", "sync_export"):
@@ -1109,7 +1118,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             command = command_builder.build_command(request)
 
             # Format for display
-            display_command = command_builder.format_command_display(command)
+            display_command = command_builder.format_command_display(command, os_type=os_type)
 
             # Create explanation
             explanation = _build_command_explanation(request)
@@ -1122,9 +1131,9 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
 
             if command_builder.preview_only:
                 response += [
-                    "**NOTE: Server is in preview-only mode** (binary not found at "
-                    f"`{binary_path}`). Command preview is available but execution "
-                    "is disabled. Install the binary from https://arpe.io to enable execution.",
+                    "**NOTE: Execution is not available** (binary not configured). "
+                    "Command preview is available. "
+                    "Download from https://arpe.io to enable execution.",
                     "",
                 ]
 
@@ -1189,8 +1198,8 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                 TextContent(
                     type="text",
                     text=(
-                        f"Server is in preview-only mode (binary not found at {binary_path}). "
-                        "Install the binary from https://arpe.io to enable execution."
+                        "Execution requires the LakeXpress binary. "
+                        "Download from https://arpe.io and set LAKEXPRESS_PATH to enable."
                     ),
                 )
             ]
@@ -1379,7 +1388,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
 
         if version_info.get("preview_only"):
             response += [
-                "**Mode**: Preview-only (binary not found)",
+                "**Mode**: Command builder (execution not available)",
                 f"**Binary Path**: {version_info['binary_path']}",
                 f"**Message**: {version_info.get('message', '')}",
                 "",

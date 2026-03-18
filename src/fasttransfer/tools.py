@@ -153,6 +153,12 @@ def create_tools(
                         },
                         "required": ["type", "database", "table"],
                     },
+                    "os_type": {
+                        "type": "string",
+                        "enum": ["linux", "windows"],
+                        "description": "Target operating system for command formatting",
+                        "default": "linux",
+                    },
                     "options": {
                         "type": "object",
                         "properties": {
@@ -368,6 +374,9 @@ def create_tools(
             ]
 
         try:
+            # Extract os_type before passing to TransferRequest (not part of the model)
+            os_type = arguments.pop("os_type", "linux")
+
             # Validate and parse request
             request = TransferRequest(**arguments)
 
@@ -382,7 +391,7 @@ def create_tools(
             command = command_builder.build_command(request)
 
             # Format for display (with masked passwords)
-            display_command = command_builder.format_command_display(command, mask=True)
+            display_command = command_builder.format_command_display(command, mask=True, os_type=os_type)
 
             # Create explanation
             explanation = _build_transfer_explanation(request)
@@ -395,9 +404,8 @@ def create_tools(
 
             if command_builder.preview_only:
                 response += [
-                    "**NOTE: Server is in preview-only mode (binary not found at "
-                    f"{command_builder.binary_path}). "
-                    "Install the binary from https://arpe.io to enable execution.**",
+                    "**NOTE: Execution is not available (binary not configured). "
+                    "Download from https://arpe.io to enable execution.**",
                     "",
                 ]
 
@@ -470,8 +478,8 @@ def create_tools(
                 TextContent(
                     type="text",
                     text=(
-                        f"Server is in preview-only mode (binary not found at {command_builder.binary_path}). "
-                        "Install the binary from https://arpe.io to enable execution."
+                        "Execution requires the FastTransfer binary. "
+                        "Download from https://arpe.io and set FASTTRANSFER_PATH to enable."
                     ),
                 )
             ]
@@ -729,7 +737,7 @@ def create_tools(
 
         if version_info.get("preview_only"):
             response += [
-                "**Mode**: Preview-only (binary not found)",
+                "**Mode**: Command builder (execution not available)",
                 f"**Binary Path**: {version_info['binary_path']}",
                 f"**Message**: {version_info['message']}",
                 "",

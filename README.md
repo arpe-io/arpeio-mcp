@@ -48,7 +48,7 @@ Add to your MCP client configuration:
 }
 ```
 
-All binary paths are optional. Missing binaries activate **preview-only mode** for that tool — preview and informational tools work normally, while execution tools return helpful install instructions.
+All binary paths are optional. When a binary is not configured, that tool operates in **command builder mode** — command building, preview, and informational tools work normally, while execution tools provide download instructions.
 
 ## Environment Variables
 
@@ -97,7 +97,7 @@ All binary paths are optional. Missing binaries activate **preview-only mode** f
 - `migratorxpress_get_version` — Report version and capabilities
 
 ### Meta (1 tool)
-- `arpe_get_status` — Status of all tools (installed/preview-only)
+- `arpe_get_status` — Status of all tools (installed/command-builder-only)
 
 ## Remote MCP Server
 

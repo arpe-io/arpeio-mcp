@@ -296,6 +296,12 @@ def create_tools(
                         "type": "string",
                         "description": "Path to license key file",
                     },
+                    "os_type": {
+                        "type": "string",
+                        "enum": ["linux", "windows"],
+                        "description": "Target operating system for command formatting",
+                        "default": "linux",
+                    },
                 },
                 "required": [
                     "auth_file",
@@ -413,6 +419,9 @@ def create_tools(
             ]
 
         try:
+            # Extract os_type before passing to MigrationParams (not part of the model)
+            os_type = arguments.pop("os_type", "linux")
+
             # Validate and parse parameters
             params = MigrationParams(**arguments)
 
@@ -427,7 +436,7 @@ def create_tools(
             command = command_builder.build_command(params)
 
             # Format for display (with license masking)
-            display_command = command_builder.format_command_display(command, mask=True)
+            display_command = command_builder.format_command_display(command, mask=True, os_type=os_type)
 
             # Create explanation
             explanation = _build_command_explanation(params)
@@ -440,10 +449,9 @@ def create_tools(
 
             if command_builder.preview_only:
                 response += [
-                    "**NOTE: Server is in preview-only mode (binary not found at "
-                    f"{command_builder.binary_path}). "
-                    "Command preview is available but execution is disabled. "
-                    "Install the binary from https://arpe.io to enable execution.**",
+                    "**NOTE: Execution is not available (binary not configured). "
+                    "Command preview is available. "
+                    "Download from https://arpe.io to enable execution.**",
                     "",
                 ]
 
@@ -512,9 +520,8 @@ def create_tools(
                 TextContent(
                     type="text",
                     text=(
-                        f"Server is in preview-only mode (binary not found at "
-                        f"{command_builder.binary_path}). "
-                        "Install the binary from https://arpe.io to enable execution."
+                        "Execution requires the MigratorXpress binary. "
+                        "Download from https://arpe.io and set MIGRATORXPRESS_PATH to enable."
                     ),
                 )
             ]
@@ -779,7 +786,7 @@ def create_tools(
 
         if version_info.get("preview_only"):
             response += [
-                "**Mode**: Preview-only (binary not found)",
+                "**Mode**: Command builder (execution not available)",
                 f"**Binary Path**: {version_info['binary_path']}",
                 f"**Message**: {version_info['message']}",
                 "",
