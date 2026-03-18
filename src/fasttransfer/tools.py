@@ -10,7 +10,7 @@ import shlex
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Callable, Awaitable
 
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, ToolAnnotations, TextContent
 from pydantic import ValidationError
 
 from .command_builder import CommandBuilder, FastTransferError
@@ -30,6 +30,21 @@ from .version import check_version_compatibility
 
 
 logger = logging.getLogger(__name__)
+
+
+def _suggest_next_steps(errors: list) -> list[str]:
+    """Suggest next tools to call based on validation error fields."""
+    tips = []
+    error_fields = set()
+    for error in errors:
+        error_fields.update(str(x) for x in error["loc"])
+
+    if "type" in error_fields or any("source" in f or "target" in f for f in error_fields):
+        tips.append("Tip: Use `fasttransfer_list_combinations` to see supported source→target database pairs.")
+    if "method" in error_fields or "distribute_key_column" in error_fields:
+        tips.append("Tip: Use `fasttransfer_suggest_parallelism` to get the optimal parallelism method for your table.")
+
+    return tips
 
 
 def create_tools(
@@ -59,7 +74,14 @@ def create_tools(
             description=(
                 "Build and preview a FastTransfer command WITHOUT executing it. "
                 "This shows the exact command that will be run, with passwords masked. "
-                "Use this FIRST before executing any transfer."
+                "Call `fasttransfer_suggest_parallelism` first to choose the optimal parallelism method. "
+                "After previewing, use `fasttransfer_execute_transfer` to run the command."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={
                 "type": "object",
@@ -70,11 +92,11 @@ def create_tools(
                             "type": {
                                 "type": "string",
                                 "enum": [e.value for e in SourceConnectionType],
-                                "description": "Source database connection type",
+                                "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL)",
                             },
                             "server": {
                                 "type": "string",
-                                "description": "Server address (host:port or host\\instance)",
+                                "description": "Server address (e.g., 'localhost:5432', 'myserver\\\\SQLEXPRESS', 'dbhost:1521')",
                             },
                             "database": {
                                 "type": "string",
@@ -165,12 +187,12 @@ def create_tools(
                             "method": {
                                 "type": "string",
                                 "enum": [e.value for e in ParallelismMethod],
-                                "description": "Parallelism method",
+                                "description": "Parallelism method. Call `fasttransfer_suggest_parallelism` first to get the optimal method for your source database and table.",
                                 "default": "None",
                             },
                             "distribute_key_column": {
                                 "type": "string",
-                                "description": "Column for data distribution",
+                                "description": "Column for data distribution. Required when method is RangeId, Random, Ntile, or DataDriven.",
                             },
                             "degree": {
                                 "type": "integer",
@@ -233,7 +255,13 @@ def create_tools(
             description=(
                 "Execute a FastTransfer command that was previously previewed. "
                 "IMPORTANT: You must set confirmation=true to execute. "
-                "This is a safety mechanism to prevent accidental execution."
+                "Call `fasttransfer_preview_transfer` first to review the command before executing."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=False,
+                destructiveHint=True,
+                idempotentHint=False,
+                openWorldHint=True,
             ),
             inputSchema={
                 "type": "object",
@@ -253,9 +281,16 @@ def create_tools(
         Tool(
             name="fasttransfer_validate_connection",
             description=(
-                "Validate database connection parameters. "
+                "Validate database connection parameters before building a transfer command. "
                 "This checks that all required parameters are provided but does NOT "
-                "actually test connectivity (would require database access)."
+                "actually test connectivity (would require database access). "
+                "Call this before `fasttransfer_preview_transfer` to catch parameter issues early."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={
                 "type": "object",
@@ -311,14 +346,30 @@ def create_tools(
         ),
         Tool(
             name="fasttransfer_list_combinations",
-            description="List all supported source to target database combinations.",
+            description=(
+                "List all supported source to target database combinations. "
+                "Call this first to discover which database pairs FastTransfer supports before building a transfer command."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
+            ),
             inputSchema={"type": "object", "properties": {}},
         ),
         Tool(
             name="fasttransfer_suggest_parallelism",
             description=(
                 "Suggest the optimal parallelism method based on source database type "
-                "and table characteristics. Provides recommendations for best performance."
+                "and table characteristics. Call this before `fasttransfer_preview_transfer` to choose "
+                "the right method and degree for best performance."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={
                 "type": "object",
@@ -349,9 +400,50 @@ def create_tools(
             name="fasttransfer_get_version",
             description=(
                 "Get the detected FastTransfer binary version, capabilities, "
-                "and supported source/target types."
+                "and supported source/target types. "
+                "Use this to check which features are available in the installed version."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="fasttransfer_suggest_workflow",
+            description=(
+                "Get a step-by-step workflow guide for transferring data between databases with FastTransfer, "
+                "including database-specific tips and recommended parallelism methods. "
+                "Call this early in your workflow to plan the right sequence of tool calls."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "source_type": {
+                        "type": "string",
+                        "description": "Source database type (e.g., 'pgsql', 'mssql', 'oraodp', 'mysql')",
+                    },
+                    "target_type": {
+                        "type": "string",
+                        "description": "Target database type (e.g., 'pgsql', 'mssql', 'oraodp', 'mysql')",
+                    },
+                    "table_size_estimate": {
+                        "type": "string",
+                        "enum": ["small", "medium", "large"],
+                        "description": "Estimated table size to tailor parallelism advice",
+                        "default": "medium",
+                    },
+                },
+                "required": ["source_type", "target_type"],
+            },
         ),
     ]
 
@@ -458,6 +550,10 @@ def create_tools(
             for error in e.errors():
                 field = " -> ".join(str(x) for x in error["loc"])
                 error_msg.append(f"- **{field}**: {error['msg']}")
+            tips = _suggest_next_steps(e.errors())
+            if tips:
+                error_msg.append("")
+                error_msg.extend(tips)
             return [TextContent(type="text", text="\n".join(error_msg))]
 
         except FastTransferError as e:
@@ -633,6 +729,10 @@ def create_tools(
             for error in e.errors():
                 field = " -> ".join(str(x) for x in error["loc"])
                 error_msg.append(f"- **{field}**: {error['msg']}")
+            tips = _suggest_next_steps(e.errors())
+            if tips:
+                error_msg.append("")
+                error_msg.extend(tips)
             return [TextContent(type="text", text="\n".join(error_msg))]
 
     async def handle_list_combinations(arguments: Dict[str, Any]) -> list[TextContent]:
@@ -711,6 +811,10 @@ def create_tools(
             for error in e.errors():
                 field = " -> ".join(str(x) for x in error["loc"])
                 error_msg.append(f"- **{field}**: {error['msg']}")
+            tips = _suggest_next_steps(e.errors())
+            if tips:
+                error_msg.append("")
+                error_msg.extend(tips)
             return [TextContent(type="text", text="\n".join(error_msg))]
 
     async def handle_get_version(arguments: Dict[str, Any]) -> list[TextContent]:
@@ -772,6 +876,90 @@ def create_tools(
 
         return [TextContent(type="text", text="\n".join(response))]
 
+    async def handle_suggest_workflow(arguments: Dict[str, Any]) -> list[TextContent]:
+        """Handle fasttransfer_suggest_workflow tool."""
+        source_type = arguments.get("source_type", "").lower()
+        target_type = arguments.get("target_type", "").lower()
+        table_size = arguments.get("table_size_estimate", "medium").lower()
+
+        # Database-specific parallelism tips
+        db_tips = {
+            "pgsql": (
+                "- **Recommended parallelism**: `Ctid` (PostgreSQL-native, no key column needed)\n"
+                "- Works on any table by splitting on physical page ranges"
+            ),
+            "oraodp": (
+                "- **Recommended parallelism**: `Rowid` (Oracle-native, no key column needed)\n"
+                "- Splits by Oracle physical rowid ranges"
+            ),
+            "mssql": (
+                "- **Recommended parallelism**: `Physloc` (SQL Server-native, no key column needed)\n"
+                "- If table has an `IDENTITY` column, `RangeId` is also excellent"
+            ),
+            "mysql": (
+                "- **Recommended parallelism**: `RangeId` on the primary key\n"
+                "- MySQL does not support Ctid/Rowid/Physloc"
+            ),
+        }
+
+        db_tip = db_tips.get(source_type, (
+            "- Call `fasttransfer_suggest_parallelism` with your table characteristics for a specific recommendation"
+        ))
+
+        # Size-specific tips
+        size_tips = {
+            "small": "- For small tables, parallelism may not be needed (`None` method is fine)",
+            "medium": "- Use a moderate parallelism degree (4-8 threads)",
+            "large": "- Use a high parallelism degree (8-16+ threads) for best throughput",
+        }
+
+        size_tip = size_tips.get(table_size, size_tips["medium"])
+
+        # Target-specific tips
+        target_tips = {
+            "mssql": "- Consider using `use_work_tables: true` for Clustered Columnstore Index targets",
+            "pgsql": "- PostgreSQL targets work well with all load modes",
+            "oraodp": "- Oracle targets support direct-path loading for maximum speed",
+        }
+
+        target_tip = target_tips.get(target_type, "")
+
+        response = [
+            "# FastTransfer Workflow",
+            "",
+            f"**Source**: {source_type} → **Target**: {target_type} (table size: {table_size})",
+            "",
+            "## Step-by-Step",
+            "",
+            "### 1. Discover supported combinations",
+            f"Call `fasttransfer_list_combinations` to confirm `{source_type}` → `{target_type}` is supported.",
+            "",
+            "### 2. Choose parallelism method",
+            "Call `fasttransfer_suggest_parallelism` with your table characteristics.",
+            "",
+            db_tip,
+            size_tip,
+            "",
+            "### 3. Validate connections",
+            "Call `fasttransfer_validate_connection` for both source and target.",
+            "",
+            "### 4. Preview the command",
+            "Call `fasttransfer_preview_transfer` with your source, target, and options.",
+            "",
+        ]
+
+        if target_tip:
+            response.append(f"### Target tips ({target_type})")
+            response.append(target_tip)
+            response.append("")
+
+        response.extend([
+            "### 5. Execute",
+            "Call `fasttransfer_execute_transfer` with the command from the preview.",
+        ])
+
+        return [TextContent(type="text", text="\n".join(response))]
+
     # ------------------------------------------------------------------ #
     # Dispatch
     # ------------------------------------------------------------------ #
@@ -791,6 +979,8 @@ def create_tools(
                 return await handle_suggest_parallelism(arguments)
             elif name == "fasttransfer_get_version":
                 return await handle_get_version(arguments)
+            elif name == "fasttransfer_suggest_workflow":
+                return await handle_suggest_workflow(arguments)
             else:
                 return None
         except Exception as e:

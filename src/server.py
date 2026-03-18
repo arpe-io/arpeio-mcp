@@ -19,7 +19,7 @@ from typing import Any
 try:
     from dotenv import load_dotenv
     from mcp.server import Server
-    from mcp.types import Tool, TextContent
+    from mcp.types import Tool, ToolAnnotations, TextContent
 except ImportError as e:
     print(f"Error: Required package not found: {e}", file=sys.stderr)
     print("Please run: pip install arpeio-mcp", file=sys.stderr)
@@ -107,12 +107,48 @@ _init_tool("FastTransfer", FastTransferCommandBuilder, create_fasttransfer_tools
 _init_tool("LakeXpress", LakeXpressCommandBuilder, create_lakexpress_tools, TOOL_CONFIGS["lakexpress"])
 _init_tool("MigratorXpress", MigratorXpressCommandBuilder, create_migratorxpress_tools, TOOL_CONFIGS["migratorxpress"])
 
-# Add the meta status tool
+# Add the meta tools
 all_tools.append(
     Tool(
         name="arpe_get_status",
-        description="Get the status of all Arpe.io tools (installed/command-builder-only, version, capabilities summary)",
+        description=(
+            "Get the status of all Arpe.io tools (installed/command-builder-only, version, capabilities summary). "
+            "Call this first to see which tools are available and their versions."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
         inputSchema={"type": "object", "properties": {}},
+    )
+)
+
+all_tools.append(
+    Tool(
+        name="arpe_quick_start",
+        description=(
+            "Get a step-by-step workflow guide for any Arpe.io product. "
+            "Call this first to understand the recommended tool sequence for your use case."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "product": {
+                    "type": "string",
+                    "enum": ["fastbcp", "fasttransfer", "lakexpress", "migratorxpress", "all"],
+                    "description": "Which product workflow to show (or 'all' for all products)",
+                },
+            },
+            "required": ["product"],
+        },
     )
 )
 
@@ -128,9 +164,11 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     """Handle tool calls by dispatching to the appropriate handler."""
     logger.info(f"call_tool invoked: name={name!r}, handlers={len(tool_handlers)}, tools={len(all_tools)}")
     try:
-        # Meta tool
+        # Meta tools
         if name == "arpe_get_status":
             return await handle_arpe_status()
+        if name == "arpe_quick_start":
+            return await handle_arpe_quick_start(arguments)
 
         # Try each registered handler
         for i, handler in enumerate(tool_handlers):
@@ -181,6 +219,64 @@ async def handle_arpe_status() -> list[TextContent]:
         response.append("")
 
     response.append(f"**Total tools registered**: {len(all_tools)}")
+
+    return [TextContent(type="text", text="\n".join(response))]
+
+
+async def handle_arpe_quick_start(arguments: dict) -> list[TextContent]:
+    """Handle arpe_quick_start tool — return workflow guide per product."""
+    product = arguments.get("product", "all")
+
+    workflows = {
+        "fastbcp": [
+            "## FastBCP (database → file export)",
+            "",
+            "1. `fastbcp_list_formats` — discover supported databases, output formats, and storage targets",
+            "2. `fastbcp_suggest_parallelism` — get the optimal parallelism method for your table",
+            "3. `fastbcp_validate_connection` — verify your connection parameters",
+            "4. `fastbcp_suggest_workflow` — get a step-by-step workflow with DB-specific tips",
+            "5. `fastbcp_preview_export` — build and review the export command",
+            "6. `fastbcp_execute_export` — run the export command",
+        ],
+        "fasttransfer": [
+            "## FastTransfer (database → database transfer)",
+            "",
+            "1. `fasttransfer_list_combinations` — discover supported source→target database pairs",
+            "2. `fasttransfer_suggest_parallelism` — get the optimal parallelism method for your table",
+            "3. `fasttransfer_validate_connection` — verify source and target connection parameters",
+            "4. `fasttransfer_suggest_workflow` — get a step-by-step workflow with transfer tips",
+            "5. `fasttransfer_preview_transfer` — build and review the transfer command",
+            "6. `fasttransfer_execute_transfer` — run the transfer command",
+        ],
+        "lakexpress": [
+            "## LakeXpress (database → cloud data lake pipeline)",
+            "",
+            "1. `lakexpress_list_capabilities` — discover supported databases, storage backends, and publishing targets",
+            "2. `lakexpress_suggest_workflow` — get the full command sequence for your use case",
+            "3. `lakexpress_preview_command` — build and review each command in the sequence",
+            "4. `lakexpress_execute_command` — run each command",
+        ],
+        "migratorxpress": [
+            "## MigratorXpress (cross-platform database migration)",
+            "",
+            "1. `migratorxpress_list_capabilities` — discover supported databases, tasks, and modes",
+            "2. `migratorxpress_suggest_workflow` — get the recommended task sequence for your migration",
+            "3. `migratorxpress_validate_auth_file` — verify your credentials file is valid",
+            "4. `migratorxpress_preview_command` — build and review the migration command",
+            "5. `migratorxpress_execute_command` — run the migration command",
+        ],
+    }
+
+    response = ["# Arpe.io Quick Start Guide", ""]
+
+    if product == "all":
+        for key in ("fastbcp", "fasttransfer", "lakexpress", "migratorxpress"):
+            response.extend(workflows[key])
+            response.append("")
+    elif product in workflows:
+        response.extend(workflows[product])
+    else:
+        response.append(f"Unknown product: {product}. Choose from: fastbcp, fasttransfer, lakexpress, migratorxpress, all")
 
     return [TextContent(type="text", text="\n".join(response))]
 

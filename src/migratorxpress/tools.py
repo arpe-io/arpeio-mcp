@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Callable, Awaitable
 
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, ToolAnnotations, TextContent
 from pydantic import ValidationError
 
 from .validators import (
@@ -32,6 +32,23 @@ from .version import check_version_compatibility
 
 
 logger = logging.getLogger(__name__)
+
+
+def _suggest_next_steps(errors: list) -> list[str]:
+    """Suggest next tools to call based on validation error fields."""
+    tips = []
+    error_fields = set()
+    for error in errors:
+        error_fields.update(str(x) for x in error["loc"])
+
+    if "auth_file" in error_fields or "source_db_auth_id" in error_fields or "target_db_auth_id" in error_fields:
+        tips.append("Tip: Use `migratorxpress_validate_auth_file` to verify your credentials file is valid.")
+    if "task_list" in error_fields:
+        tips.append("Tip: Use `migratorxpress_suggest_workflow` to get the recommended task sequence for your migration.")
+    if any("source" in f or "target" in f for f in error_fields):
+        tips.append("Tip: Use `migratorxpress_list_capabilities` to see supported source and target databases.")
+
+    return tips
 
 
 def _build_command_explanation(params: MigrationParams) -> str:
@@ -112,8 +129,15 @@ def create_tools(
             description=(
                 "Build and preview a MigratorXpress CLI command WITHOUT executing it. "
                 "This shows the exact command that will be run. "
-                "Use this FIRST before executing any command. "
+                "Call `migratorxpress_suggest_workflow` first to plan the right task sequence. "
+                "After previewing, use `migratorxpress_execute_command` to run the command. "
                 "License text is masked in the display output."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={
                 "type": "object",
@@ -156,7 +180,7 @@ def create_tools(
                             "type": "string",
                             "enum": [t.value for t in TaskType],
                         },
-                        "description": "Tasks to run (e.g., translate, create, transfer, diff, copy_pk, copy_ak, copy_fk, all)",
+                        "description": "Tasks to run (e.g., ['translate', 'create', 'transfer'] for full migration, or ['diff'] for validation). Call `migratorxpress_suggest_workflow` to get the recommended task sequence.",
                     },
                     "resume": {
                         "type": "string",
@@ -318,7 +342,13 @@ def create_tools(
             description=(
                 "Execute a MigratorXpress command that was previously previewed. "
                 "IMPORTANT: You must set confirmation=true to execute. "
-                "This is a safety mechanism to prevent accidental execution."
+                "Call `migratorxpress_preview_command` first to review the command before executing."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=False,
+                destructiveHint=True,
+                idempotentHint=False,
+                openWorldHint=True,
             ),
             inputSchema={
                 "type": "object",
@@ -339,7 +369,14 @@ def create_tools(
             name="migratorxpress_validate_auth_file",
             description=(
                 "Validate that an authentication file exists, is valid JSON, "
-                "and optionally check for specific auth_id entries."
+                "and optionally check for specific auth_id entries. "
+                "Call this before `migratorxpress_preview_command` to verify credentials are set up correctly."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={
                 "type": "object",
@@ -361,7 +398,14 @@ def create_tools(
             name="migratorxpress_list_capabilities",
             description=(
                 "List supported source databases, target databases, migration database types, "
-                "tasks, migration DB modes, load modes, and FK modes."
+                "tasks, migration DB modes, load modes, and FK modes. "
+                "Call this first to discover what MigratorXpress supports before building a command."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={"type": "object", "properties": {}},
         ),
@@ -369,7 +413,14 @@ def create_tools(
             name="migratorxpress_suggest_workflow",
             description=(
                 "Given a source database type, target database type, and optional constraint flag, "
-                "suggest the full sequence of MigratorXpress tasks with example commands."
+                "suggest the full sequence of MigratorXpress tasks with example commands. "
+                "Call this first to plan your migration before using `migratorxpress_preview_command`."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={
                 "type": "object",
@@ -395,7 +446,14 @@ def create_tools(
             name="migratorxpress_get_version",
             description=(
                 "Get the detected MigratorXpress binary version, capabilities, "
-                "and supported databases, tasks, and modes."
+                "and supported databases, tasks, and modes. "
+                "Use this to check which features are available in the installed version."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={"type": "object", "properties": {}},
         ),
@@ -496,6 +554,10 @@ def create_tools(
             for error in e.errors():
                 field = " -> ".join(str(x) for x in error["loc"])
                 error_msg.append(f"- **{field}**: {error['msg']}")
+            tips = _suggest_next_steps(e.errors())
+            if tips:
+                error_msg.append("")
+                error_msg.extend(tips)
             return [TextContent(type="text", text="\n".join(error_msg))]
 
         except MigratorXpressError as e:

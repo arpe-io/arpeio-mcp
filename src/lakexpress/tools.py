@@ -11,7 +11,7 @@ import shlex
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, ToolAnnotations, TextContent
 from pydantic import ValidationError
 
 from .validators import (
@@ -35,6 +35,21 @@ from .version import check_version_compatibility
 logger = logging.getLogger(__name__)
 
 
+def _suggest_next_steps(errors: list) -> list[str]:
+    """Suggest next tools to call based on validation error fields."""
+    tips = []
+    error_fields = set()
+    for error in errors:
+        error_fields.update(str(x) for x in error["loc"])
+
+    if "command" in error_fields:
+        tips.append("Tip: Use `lakexpress_list_capabilities` to see supported commands.")
+    if "auth_file" in error_fields or "log_db_auth_id" in error_fields:
+        tips.append("Tip: Use `lakexpress_suggest_workflow` to see the required parameters for each command.")
+
+    return tips
+
+
 def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[Tool], Callable]:
     """Create LakeXpress MCP tools and their handler function.
 
@@ -56,7 +71,14 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             description=(
                 "Build and preview a LakeXpress CLI command WITHOUT executing it. "
                 "This shows the exact command that will be run. "
-                "Use this FIRST before executing any command."
+                "Call `lakexpress_suggest_workflow` first to determine the right command sequence. "
+                "After previewing, use `lakexpress_execute_command` to run the command."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={
                 "type": "object",
@@ -1014,7 +1036,13 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             description=(
                 "Execute a LakeXpress command that was previously previewed. "
                 "IMPORTANT: You must set confirmation=true to execute. "
-                "This is a safety mechanism to prevent accidental execution."
+                "Call `lakexpress_preview_command` first to review the command before executing."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=False,
+                destructiveHint=True,
+                idempotentHint=False,
+                openWorldHint=True,
             ),
             inputSchema={
                 "type": "object",
@@ -1035,7 +1063,14 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             name="lakexpress_list_capabilities",
             description=(
                 "List supported source databases, log databases, storage backends, "
-                "publishing targets, compression types, and available commands."
+                "publishing targets, compression types, and available commands. "
+                "Call this first to discover what LakeXpress supports before building a command."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={"type": "object", "properties": {}},
         ),
@@ -1043,7 +1078,14 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             name="lakexpress_suggest_workflow",
             description=(
                 "Given a use case (source DB type, storage destination, optional publish target), "
-                "suggest the full sequence of LakeXpress commands with example parameters."
+                "suggest the full sequence of LakeXpress commands with example parameters. "
+                "Call this first to plan your workflow before using `lakexpress_preview_command`."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={
                 "type": "object",
@@ -1068,7 +1110,14 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             name="lakexpress_get_version",
             description=(
                 "Get the detected LakeXpress binary version, capabilities, "
-                "and supported databases, storage backends, and publishing targets."
+                "and supported databases, storage backends, and publishing targets. "
+                "Use this to check which features are available in the installed version."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={"type": "object", "properties": {}},
         ),
@@ -1178,6 +1227,10 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             for error in e.errors():
                 field = " -> ".join(str(x) for x in error["loc"])
                 error_msg.append(f"- **{field}**: {error['msg']}")
+            tips = _suggest_next_steps(e.errors())
+            if tips:
+                error_msg.append("")
+                error_msg.extend(tips)
             return [TextContent(type="text", text="\n".join(error_msg))]
 
         except LakeXpressError as e:

@@ -10,7 +10,7 @@ import shlex
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, ToolAnnotations, TextContent
 from pydantic import ValidationError
 
 from .validators import (
@@ -34,6 +34,25 @@ from .version import check_version_compatibility
 
 
 logger = logging.getLogger(__name__)
+
+
+def _suggest_next_steps(errors: list) -> list[str]:
+    """Suggest next tools to call based on validation error fields."""
+    tips = []
+    error_fields = set()
+    error_msgs = set()
+    for error in errors:
+        error_fields.update(str(x) for x in error["loc"])
+        error_msgs.add(error["msg"].lower())
+
+    if "type" in error_fields or any("source" in f for f in error_fields):
+        tips.append("Tip: Use `fastbcp_list_formats` to see supported source database types and output formats.")
+    if "method" in error_fields or "distribute_key_column" in error_fields:
+        tips.append("Tip: Use `fastbcp_suggest_parallelism` to get the optimal parallelism method for your table.")
+    if any("storage" in m or "cloud" in m for m in error_msgs):
+        tips.append("Tip: Use `fastbcp_list_formats` to see supported storage targets.")
+
+    return tips
 
 
 def _build_export_explanation(request: ExportRequest) -> str:
@@ -119,7 +138,14 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             description=(
                 "Build and preview a FastBCP export command WITHOUT executing it. "
                 "This shows the exact command that will be run, with passwords masked. "
-                "Use this FIRST before executing any export."
+                "Call `fastbcp_suggest_parallelism` first to choose the optimal parallelism method. "
+                "After previewing, use `fastbcp_execute_export` to run the command."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={
                 "type": "object",
@@ -130,11 +156,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             "type": {
                                 "type": "string",
                                 "enum": [e.value for e in SourceConnectionType],
-                                "description": "Source database connection type",
+                                "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL)",
                             },
                             "server": {
                                 "type": "string",
-                                "description": "Server address (host:port or host\\instance)",
+                                "description": "Server address (e.g., 'localhost:5432', 'myserver\\\\SQLEXPRESS', 'dbhost:1521')",
                             },
                             "database": {
                                 "type": "string",
@@ -256,12 +282,12 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             "method": {
                                 "type": "string",
                                 "enum": [e.value for e in ParallelismMethod],
-                                "description": "Parallelism method",
+                                "description": "Parallelism method. Call `fastbcp_suggest_parallelism` first to get the optimal method for your source database and table.",
                                 "default": "None",
                             },
                             "distribute_key_column": {
                                 "type": "string",
-                                "description": "Column for data distribution",
+                                "description": "Column for data distribution. Required when method is RangeId, Random, Ntile, or DataDriven.",
                             },
                             "degree": {
                                 "type": "integer",
@@ -334,7 +360,13 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             description=(
                 "Execute a FastBCP export command that was previously previewed. "
                 "IMPORTANT: You must set confirmation=true to execute. "
-                "This is a safety mechanism to prevent accidental execution."
+                "Call `fastbcp_preview_export` first to review the command before executing."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=False,
+                destructiveHint=True,
+                idempotentHint=False,
+                openWorldHint=True,
             ),
             inputSchema={
                 "type": "object",
@@ -354,9 +386,16 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
         Tool(
             name="fastbcp_validate_connection",
             description=(
-                "Validate source database connection parameters. "
+                "Validate source database connection parameters before building an export command. "
                 "This checks that all required parameters are provided but does NOT "
-                "actually test connectivity (would require database access)."
+                "actually test connectivity (would require database access). "
+                "Call this before `fastbcp_preview_export` to catch parameter issues early."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={
                 "type": "object",
@@ -408,14 +447,30 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
         ),
         Tool(
             name="fastbcp_list_formats",
-            description="List all supported source databases, output formats, and storage targets.",
+            description=(
+                "List all supported source databases, output formats, and storage targets. "
+                "Call this first to discover what databases and formats FastBCP supports before building an export command."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
+            ),
             inputSchema={"type": "object", "properties": {}},
         ),
         Tool(
             name="fastbcp_suggest_parallelism",
             description=(
                 "Suggest the optimal parallelism method based on source database type "
-                "and table characteristics. Provides recommendations for best performance."
+                "and table characteristics. Call this before `fastbcp_preview_export` to choose "
+                "the right method and degree for best performance."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={
                 "type": "object",
@@ -446,9 +501,49 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             name="fastbcp_get_version",
             description=(
                 "Get the detected FastBCP binary version, capabilities, "
-                "and supported source types, output formats, and storage targets."
+                "and supported source types, output formats, and storage targets. "
+                "Use this to check which features are available in the installed version."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
             ),
             inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="fastbcp_suggest_workflow",
+            description=(
+                "Get a step-by-step workflow guide for exporting data with FastBCP, "
+                "including database-specific tips and recommended parallelism methods. "
+                "Call this early in your workflow to plan the right sequence of tool calls."
+            ),
+            annotations=ToolAnnotations(
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "source_type": {
+                        "type": "string",
+                        "description": "Source database type (e.g., 'pgsql', 'mssql', 'oraodp', 'mysql')",
+                    },
+                    "output_format": {
+                        "type": "string",
+                        "description": "Desired output format (e.g., 'parquet', 'csv', 'tsv', 'json', 'avro')",
+                    },
+                    "storage_target": {
+                        "type": "string",
+                        "description": "Storage target (e.g., 'local', 's3', 'azure', 'gcs'). Defaults to 'local'.",
+                        "default": "local",
+                    },
+                },
+                "required": ["source_type", "output_format"],
+            },
         ),
     ]
 
@@ -557,6 +652,10 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             for error in e.errors():
                 field = " -> ".join(str(x) for x in error["loc"])
                 error_msg.append(f"- **{field}**: {error['msg']}")
+            tips = _suggest_next_steps(e.errors())
+            if tips:
+                error_msg.append("")
+                error_msg.extend(tips)
             return [TextContent(type="text", text="\n".join(error_msg))]
 
         except FastBCPError as e:
@@ -733,6 +832,10 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             for error in e.errors():
                 field = " -> ".join(str(x) for x in error["loc"])
                 error_msg.append(f"- **{field}**: {error['msg']}")
+            tips = _suggest_next_steps(e.errors())
+            if tips:
+                error_msg.append("")
+                error_msg.extend(tips)
             return [TextContent(type="text", text="\n".join(error_msg))]
 
     async def handle_list_formats(arguments: Dict[str, Any]) -> list[TextContent]:
@@ -825,6 +928,10 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             for error in e.errors():
                 field = " -> ".join(str(x) for x in error["loc"])
                 error_msg.append(f"- **{field}**: {error['msg']}")
+            tips = _suggest_next_steps(e.errors())
+            if tips:
+                error_msg.append("")
+                error_msg.extend(tips)
             return [TextContent(type="text", text="\n".join(error_msg))]
 
     async def handle_get_version(arguments: Dict[str, Any]) -> list[TextContent]:
@@ -889,6 +996,94 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
 
         return [TextContent(type="text", text="\n".join(response))]
 
+    async def handle_suggest_workflow(arguments: Dict[str, Any]) -> list[TextContent]:
+        """Handle fastbcp_suggest_workflow tool."""
+        source_type = arguments.get("source_type", "").lower()
+        output_format = arguments.get("output_format", "").lower()
+        storage_target = arguments.get("storage_target", "local").lower()
+
+        # Database-specific parallelism tips
+        db_tips = {
+            "pgsql": (
+                "- **Recommended parallelism**: `Ctid` (no key column needed, PostgreSQL-native)\n"
+                "- Ctid splits the table by physical page ranges — works on any table\n"
+                "- Alternative: `RangeId` or `Ntile` if you have a numeric key with good distribution"
+            ),
+            "oraodp": (
+                "- **Recommended parallelism**: `Rowid` (no key column needed, Oracle-native)\n"
+                "- Rowid splits by Oracle physical rowid ranges — works on any table\n"
+                "- Alternative: `RangeId` or `Ntile` with a numeric/date key"
+            ),
+            "mssql": (
+                "- **Recommended parallelism**: `Physloc` (no key column needed, SQL Server-native)\n"
+                "- If table has an `IDENTITY` column, `RangeId` is also excellent\n"
+                "- Alternative: `Ntile` with any indexed column"
+            ),
+            "mysql": (
+                "- **Recommended parallelism**: `RangeId` on the primary key\n"
+                "- MySQL does not support Ctid/Rowid/Physloc\n"
+                "- Alternative: `Ntile` or `DataDriven` with a well-distributed column"
+            ),
+        }
+
+        db_tip = db_tips.get(source_type, (
+            "- Call `fastbcp_suggest_parallelism` with your table characteristics for a specific recommendation"
+        ))
+
+        # Format-specific tips
+        format_tips = {
+            "parquet": "- Parquet is columnar and highly compressed — ideal for analytics and cloud storage",
+            "csv": "- CSV is universally compatible — consider setting delimiter, encoding, and quote character",
+            "tsv": "- TSV uses tab delimiters — good for data with commas in values",
+            "json": "- JSON output produces one JSON object per line (JSONL format)",
+            "avro": "- Avro includes schema in the file — good for schema evolution workflows",
+        }
+
+        format_tip = format_tips.get(output_format, "")
+
+        # Cloud storage tips
+        cloud_tips = ""
+        if storage_target != "local":
+            cloud_tips = (
+                f"\n### Cloud Storage ({storage_target})\n"
+                f"- Set up a `cloud_profile` in your FastBCP configuration\n"
+                f"- The profile contains credentials for {storage_target} access\n"
+                f"- Pass `cloud_profile` in the options when building the export command"
+            )
+
+        response = [
+            "# FastBCP Export Workflow",
+            "",
+            f"**Source**: {source_type} → **Format**: {output_format} → **Target**: {storage_target}",
+            "",
+            "## Step-by-Step",
+            "",
+            f"### 1. Discover capabilities",
+            f"Call `fastbcp_list_formats` to confirm `{source_type}` and `{output_format}` are supported.",
+            "",
+            f"### 2. Choose parallelism method",
+            f"Call `fastbcp_suggest_parallelism` with your table characteristics.",
+            "",
+            db_tip,
+            "",
+            f"### 3. Validate connection",
+            f"Call `fastbcp_validate_connection` to verify your database parameters.",
+            "",
+            f"### 4. Preview the command",
+            f"Call `fastbcp_preview_export` with your source, output, and options.",
+            "",
+            format_tip,
+            "",
+            f"### 5. Execute",
+            f"Call `fastbcp_execute_export` with the command from the preview.",
+            "",
+        ]
+
+        if cloud_tips:
+            response.append(cloud_tips)
+
+        return [TextContent(type="text", text="\n".join(response))]
+
     # --- Dispatcher ---
 
     async def handle_call(name: str, arguments: Dict[str, Any]):
@@ -913,6 +1108,8 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             return await handle_suggest_parallelism(arguments)
         elif name == "fastbcp_get_version":
             return await handle_get_version(arguments)
+        elif name == "fastbcp_suggest_workflow":
+            return await handle_suggest_workflow(arguments)
         return None  # not our tool
 
     return tools, handle_call
