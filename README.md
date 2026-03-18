@@ -11,6 +11,9 @@ pinned: false
 
 <!-- mcp-name: io.github.arpe-io/arpeio-mcp -->
 
+[![PyPI version](https://img.shields.io/pypi/v/arpeio-mcp)](https://pypi.org/project/arpeio-mcp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Unified MCP server for [Arpe.io](https://arpe.io) data tools — build, preview, and execute high-performance data commands through AI assistants.
 
 | Tool | Description |
