@@ -25,6 +25,7 @@ except ImportError as e:
     print("Please run: pip install arpeio-mcp", file=sys.stderr)
     sys.exit(1)
 
+from src.instructions import INSTRUCTIONS
 from src.fastbcp.command_builder import CommandBuilder as FastBCPCommandBuilder
 from src.fastbcp.tools import create_tools as create_fastbcp_tools
 from src.fasttransfer.command_builder import CommandBuilder as FastTransferCommandBuilder
@@ -33,6 +34,7 @@ from src.lakexpress.command_builder import CommandBuilder as LakeXpressCommandBu
 from src.lakexpress.tools import create_tools as create_lakexpress_tools
 from src.migratorxpress.command_builder import CommandBuilder as MigratorXpressCommandBuilder
 from src.migratorxpress.tools import create_tools as create_migratorxpress_tools
+from src.doc_search import SearchEngine, create_tools as create_doc_search_tools
 
 # Load environment variables
 load_dotenv()
@@ -72,7 +74,7 @@ TOOL_CONFIGS = {
 }
 
 # Initialize MCP server
-app = Server("arpeio-mcp")
+app = Server("arpeio-mcp", instructions=INSTRUCTIONS)
 
 # Collect all tools and handlers
 all_tools: list[Tool] = []
@@ -112,8 +114,10 @@ all_tools.append(
     Tool(
         name="arpe_get_status",
         description=(
-            "Get the status of all Arpe.io tools (installed/command-builder-only, version, capabilities summary). "
-            "Call this first to see which tools are available and their versions."
+            "Show the installation status, version, and binary path of all four Arpe.io tools "
+            "(FastBCP, FastTransfer, LakeXpress, MigratorXpress). "
+            "Call this to check which tools are installed and available for execution vs. command-building only. "
+            "Does not require database connectivity or any parameters."
         ),
         annotations=ToolAnnotations(
             readOnlyHint=True,
@@ -129,8 +133,11 @@ all_tools.append(
     Tool(
         name="arpe_quick_start",
         description=(
-            "Get a step-by-step workflow guide for any Arpe.io product. "
-            "Call this first to understand the recommended tool sequence for your use case."
+            "Determine which Arpe.io tool to use and get a step-by-step workflow guide. "
+            "Call this when the user's intent is unclear or they are new to arpe.io tools. "
+            "Accepts a plain English use case description and returns the recommended tool, "
+            "required parameters, and the sequence of tool calls to make. "
+            "Does not execute anything."
         ),
         annotations=ToolAnnotations(
             readOnlyHint=True,
@@ -141,16 +148,27 @@ all_tools.append(
         inputSchema={
             "type": "object",
             "properties": {
+                "use_case": {
+                    "type": "string",
+                    "description": "Plain English description of what the user wants to do (e.g., 'export a large Oracle table to S3 as Parquet', 'migrate SQL Server schema to PostgreSQL'). Used to auto-detect the right tool.",
+                },
                 "product": {
                     "type": "string",
                     "enum": ["fastbcp", "fasttransfer", "lakexpress", "migratorxpress", "all"],
-                    "description": "Which product workflow to show (or 'all' for all products)",
+                    "description": "Override auto-detection and show the workflow for a specific product. If omitted, the tool selects based on use_case.",
                 },
             },
-            "required": ["product"],
+            "required": ["use_case"],
         },
     )
 )
+
+# Initialize documentation search
+search_engine = SearchEngine()
+_doc_tools, _doc_handler = create_doc_search_tools(search_engine)
+all_tools.extend(_doc_tools)
+tool_handlers.append(_doc_handler)
+logger.info(f"DocSearch: {len(_doc_tools)} tools registered")
 
 
 @app.list_tools()
@@ -224,59 +242,126 @@ async def handle_arpe_status() -> list[TextContent]:
 
 
 async def handle_arpe_quick_start(arguments: dict) -> list[TextContent]:
-    """Handle arpe_quick_start tool — return workflow guide per product."""
-    product = arguments.get("product", "all")
+    """Handle arpe_quick_start tool — detect the right tool and return workflow guide."""
+    use_case = arguments.get("use_case", "")
+    product_override = arguments.get("product")
 
     workflows = {
-        "fastbcp": [
-            "## FastBCP (database → file export)",
-            "",
-            "1. `fastbcp_list_formats` — discover supported databases, output formats, and storage targets",
-            "2. `fastbcp_suggest_parallelism` — get the optimal parallelism method for your table",
-            "3. `fastbcp_validate_connection` — verify your connection parameters",
-            "4. `fastbcp_suggest_workflow` — get a step-by-step workflow with DB-specific tips",
-            "5. `fastbcp_preview_export` — build and review the export command",
-            "6. `fastbcp_execute_export` — run the export command",
-        ],
-        "fasttransfer": [
-            "## FastTransfer (database → database transfer)",
-            "",
-            "1. `fasttransfer_list_combinations` — discover supported source→target database pairs",
-            "2. `fasttransfer_suggest_parallelism` — get the optimal parallelism method for your table",
-            "3. `fasttransfer_validate_connection` — verify source and target connection parameters",
-            "4. `fasttransfer_suggest_workflow` — get a step-by-step workflow with transfer tips",
-            "5. `fasttransfer_preview_transfer` — build and review the transfer command",
-            "6. `fasttransfer_execute_transfer` — run the transfer command",
-        ],
-        "lakexpress": [
-            "## LakeXpress (database → cloud data lake pipeline)",
-            "",
-            "1. `lakexpress_list_capabilities` — discover supported databases, storage backends, and publishing targets",
-            "2. `lakexpress_suggest_workflow` — get the full command sequence for your use case",
-            "3. `lakexpress_preview_command` — build and review each command in the sequence",
-            "4. `lakexpress_execute_command` — run each command",
-        ],
-        "migratorxpress": [
-            "## MigratorXpress (cross-platform database migration)",
-            "",
-            "1. `migratorxpress_list_capabilities` — discover supported databases, tasks, and modes",
-            "2. `migratorxpress_suggest_workflow` — get the recommended task sequence for your migration",
-            "3. `migratorxpress_validate_auth_file` — verify your credentials file is valid",
-            "4. `migratorxpress_preview_command` — build and review the migration command",
-            "5. `migratorxpress_execute_command` — run the migration command",
-        ],
+        "fastbcp": {
+            "name": "FastBCP",
+            "purpose": "High-performance parallel database export to files and cloud storage",
+            "when": "Export a database table or query result to CSV, Parquet, JSON, TSV, BSON, XLSX, or binary files",
+            "warning": None,
+            "params": "source (type, server, database, table/query, credentials), output (format, path/directory), options (method, degree)",
+            "steps": [
+                "1. `fastbcp_validate_connection` — verify your connection parameters",
+                "2. `fastbcp_suggest_parallelism` — get the optimal parallelism method",
+                "3. `fastbcp_preview_export` — build and review the export command",
+                "4. `fastbcp_execute_export` — run the export command",
+            ],
+        },
+        "fasttransfer": {
+            "name": "FastTransfer",
+            "purpose": "High-performance parallel data transfer between databases",
+            "when": "Copy data directly from one database to another without intermediate files",
+            "warning": None,
+            "params": "source (type, server, database, table/query, credentials), target (type, server, database, table, credentials), options (method, degree)",
+            "steps": [
+                "1. `fasttransfer_validate_connection` — verify source and target connections",
+                "2. `fasttransfer_suggest_parallelism` — get the optimal parallelism method",
+                "3. `fasttransfer_preview_transfer` — build and review the transfer command",
+                "4. `fasttransfer_execute_transfer` — run the transfer command",
+            ],
+        },
+        "lakexpress": {
+            "name": "LakeXpress",
+            "purpose": "Automated database-to-cloud data pipeline as Parquet",
+            "when": "Sync database tables to a cloud lakehouse (Snowflake, Databricks, Fabric, BigQuery, Redshift, MotherDuck)",
+            "warning": "LakeXpress uses FastBCP internally for extraction — do NOT also use FastBCP for the same task.",
+            "params": "auth_file (JSON credentials), log_db_auth_id, source config, storage backend, publish target",
+            "steps": [
+                "1. `lakexpress_suggest_workflow` — get the full command sequence",
+                "2. `lakexpress_preview_command` — build each command (logdb_init, config_create, sync/run)",
+                "3. `lakexpress_execute_command` — run each command in sequence",
+            ],
+        },
+        "migratorxpress": {
+            "name": "MigratorXpress",
+            "purpose": "Cross-platform database migration with DDL translation and parallel data transfer",
+            "when": "Migrate schema + data from one database platform to another (e.g., Oracle → PostgreSQL)",
+            "warning": "MigratorXpress uses FastTransfer internally — do NOT also use FastTransfer for the same task.",
+            "params": "auth_file (JSON credentials), source/target db auth IDs, schema names, task list",
+            "steps": [
+                "1. `migratorxpress_validate_auth_file` — verify credentials file",
+                "2. `migratorxpress_suggest_workflow` — get the recommended task sequence",
+                "3. `migratorxpress_preview_command` — build and review the migration command",
+                "4. `migratorxpress_execute_command` — run the migration command",
+            ],
+        },
     }
+
+    # Keyword-based tool detection
+    _TOOL_KEYWORDS = {
+        "fastbcp": ["export", "dump", "extract", "file", "csv", "parquet", "json", "tsv",
+                     "bson", "xlsx", "binary", "output file", "to file", "to disk"],
+        "fasttransfer": ["transfer", "replicate", "copy data", "database to database",
+                         "db to db", "etl", "load data", "insert into"],
+        "lakexpress": ["lake", "lakehouse", "snowflake", "databricks", "fabric",
+                       "redshift", "bigquery", "motherduck", "glue", "ducklake",
+                       "pipeline", "sync to cloud", "s3 parquet", "data lake"],
+        "migratorxpress": ["migrate", "migration", "schema translation", "convert schema",
+                           "cross-platform", "ddl", "translate schema", "copy constraints",
+                           "primary key", "foreign key"],
+    }
+
+    def _detect_product(text: str) -> str | None:
+        text_lower = text.lower()
+        scores = {}
+        for product, keywords in _TOOL_KEYWORDS.items():
+            score = sum(1 for kw in keywords if kw in text_lower)
+            if score > 0:
+                scores[product] = score
+        if not scores:
+            return None
+        return max(scores, key=lambda k: scores[k])
+
+    # Determine which product to show
+    if product_override and product_override in workflows:
+        selected = product_override
+    elif product_override == "all":
+        selected = "all"
+    else:
+        selected = _detect_product(use_case) if use_case else None
 
     response = ["# Arpe.io Quick Start Guide", ""]
 
-    if product == "all":
-        for key in ("fastbcp", "fasttransfer", "lakexpress", "migratorxpress"):
-            response.extend(workflows[key])
+    if selected == "all" or selected is None:
+        if selected is None and use_case:
+            response.append(f"Could not determine the best tool for: \"{use_case}\"")
+            response.append("Here are all available tools — pick the one that matches your goal:")
             response.append("")
-    elif product in workflows:
-        response.extend(workflows[product])
+        for key in ("fastbcp", "fasttransfer", "lakexpress", "migratorxpress"):
+            wf = workflows[key]
+            response.append(f"## {wf['name']} — {wf['purpose']}")
+            response.append(f"**Use when**: {wf['when']}")
+            response.append("")
+            response.extend(wf["steps"])
+            response.append("")
     else:
-        response.append(f"Unknown product: {product}. Choose from: fastbcp, fasttransfer, lakexpress, migratorxpress, all")
+        wf = workflows[selected]
+        response.append(f"## Recommended: {wf['name']}")
+        response.append(f"**{wf['purpose']}**")
+        response.append("")
+        if use_case:
+            response.append(f"Based on your use case: \"{use_case}\"")
+            response.append("")
+        if wf["warning"]:
+            response.append(f"**Warning**: {wf['warning']}")
+            response.append("")
+        response.append(f"**Required parameters**: {wf['params']}")
+        response.append("")
+        response.append("## Recommended sequence:")
+        response.extend(wf["steps"])
 
     return [TextContent(type="text", text="\n".join(response))]
 
@@ -285,6 +370,9 @@ async def _run():
     """Async server startup logic."""
     logger.info("Starting Arpe.io Unified MCP Server...")
     logger.info(f"Tools registered: {len(all_tools)}")
+
+    # Start documentation search index loading in the background (non-blocking)
+    asyncio.create_task(search_engine.initialize(TOOL_CONFIGS))
 
     from mcp.server.stdio import stdio_server
 

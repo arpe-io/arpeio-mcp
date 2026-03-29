@@ -27,6 +27,7 @@ from .validators import (
     LogLevel,
 )
 from .version import check_version_compatibility
+from src.base.error_patterns import diagnose_cli_error
 
 
 logger = logging.getLogger(__name__)
@@ -72,10 +73,11 @@ def create_tools(
         Tool(
             name="fasttransfer_preview_transfer",
             description=(
-                "Build and preview a FastTransfer command WITHOUT executing it. "
-                "This shows the exact command that will be run, with passwords masked. "
-                "Call `fasttransfer_suggest_parallelism` first to choose the optimal parallelism method. "
-                "After previewing, use `fasttransfer_execute_transfer` to run the command."
+                "Build and preview a FastTransfer database-to-database transfer command WITHOUT executing it. "
+                "Call this after fasttransfer_validate_connection and fasttransfer_suggest_parallelism. "
+                "Shows the exact CLI command with passwords masked. "
+                "Does not test connectivity or execute the transfer. "
+                "After reviewing, pass the command to fasttransfer_execute_transfer."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -100,42 +102,42 @@ def create_tools(
                             },
                             "database": {
                                 "type": "string",
-                                "description": "Database name",
+                                "description": "Source database or service name to connect to.",
                             },
                             "schema": {
                                 "type": "string",
-                                "description": "Schema name (optional)",
+                                "description": "Source schema name. Omit to use the database default schema.",
                             },
                             "table": {
                                 "type": "string",
-                                "description": "Table name (optional if query or file_input provided)",
+                                "description": "Source table name. Provide this OR query OR file_input, not multiple.",
                             },
                             "query": {
                                 "type": "string",
-                                "description": "SQL query (alternative to table)",
+                                "description": "Custom SQL SELECT query to use as source data instead of a full table. Use when you need filtering, joins, or column selection.",
                             },
                             "file_input": {
                                 "type": "string",
-                                "description": "File path for data input (alternative to table/query)",
+                                "description": "Absolute path to a data file to use as source input instead of a database table or query.",
                             },
-                            "user": {"type": "string", "description": "Username"},
-                            "password": {"type": "string", "description": "Password"},
+                            "user": {"type": "string", "description": "Database username. Required unless using trusted_auth, connect_string, or dsn."},
+                            "password": {"type": "string", "description": "Database password. Required when user is provided and not using trusted_auth."},
                             "trusted_auth": {
                                 "type": "boolean",
-                                "description": "Use trusted authentication",
+                                "description": "Use Windows trusted (integrated) authentication instead of username/password. Only available on Windows with SQL Server.",
                                 "default": False,
                             },
                             "connect_string": {
                                 "type": "string",
-                                "description": "Full connection string (alternative to server/user/password)",
+                                "description": "Full native connection string. Use instead of server/user/password for custom formats (e.g., Oracle TNS).",
                             },
                             "dsn": {
                                 "type": "string",
-                                "description": "ODBC DSN name",
+                                "description": "ODBC Data Source Name. Use when connecting via a pre-configured system or user DSN.",
                             },
                             "provider": {
                                 "type": "string",
-                                "description": "OleDB provider name",
+                                "description": "OLE DB provider name. Only needed for OLE DB connection types.",
                             },
                         },
                         "required": ["type", "database"],
@@ -146,31 +148,31 @@ def create_tools(
                             "type": {
                                 "type": "string",
                                 "enum": [e.value for e in TargetConnectionType],
-                                "description": "Target database connection type",
+                                "description": "Target database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL). Use fasttransfer_list_combinations to see valid pairs.",
                             },
                             "server": {
                                 "type": "string",
-                                "description": "Server address (host:port or host\\instance)",
+                                "description": "Server address in host:port format (e.g., 'localhost:5432') or host\\instance for SQL Server.",
                             },
                             "database": {
                                 "type": "string",
-                                "description": "Database name",
+                                "description": "Target database or service name.",
                             },
-                            "schema": {"type": "string", "description": "Schema name"},
+                            "schema": {"type": "string", "description": "Target schema name. Omit to use the database default schema."},
                             "table": {
                                 "type": "string",
-                                "description": "Table name (required)",
+                                "description": "Target table name. The table must already exist in the target database.",
                             },
-                            "user": {"type": "string", "description": "Username"},
-                            "password": {"type": "string", "description": "Password"},
+                            "user": {"type": "string", "description": "Database username. Required unless using trusted_auth or connect_string."},
+                            "password": {"type": "string", "description": "Database password. Required when user is provided and not using trusted_auth."},
                             "trusted_auth": {
                                 "type": "boolean",
-                                "description": "Use trusted authentication",
+                                "description": "Use Windows trusted (integrated) authentication instead of username/password. Only available on Windows with SQL Server.",
                                 "default": False,
                             },
                             "connect_string": {
                                 "type": "string",
-                                "description": "Full connection string (alternative to server/user/password)",
+                                "description": "Full native connection string. Use instead of server/user/password for custom formats.",
                             },
                         },
                         "required": ["type", "database", "table"],
@@ -178,7 +180,7 @@ def create_tools(
                     "os_type": {
                         "type": "string",
                         "enum": ["linux", "windows"],
-                        "description": "Target operating system for command formatting",
+                        "description": "Operating system where FastTransfer will run. Affects command quoting and path separators. linux: uses single quotes and forward slashes. windows: uses double quotes and backslashes.",
                         "default": "linux",
                     },
                     "options": {
@@ -187,62 +189,62 @@ def create_tools(
                             "method": {
                                 "type": "string",
                                 "enum": [e.value for e in ParallelismMethod],
-                                "description": "Parallelism method. Call `fasttransfer_suggest_parallelism` first to get the optimal method for your source database and table.",
+                                "description": "Parallelism method. Ntile: even distribution on numeric key. DataDriven: distinct value partitions, works with any data type. PhysLoc/Physloc: SQL Server physical location (no key needed). Ctid: PostgreSQL physical tuple ID (no key needed). Rowid: Oracle physical ROWID (no key needed). RangeId: numeric min/max range. Random: modulo-based approximate distribution. NZDataSlice: Netezza native slicing. None: single-threaded. Call `fasttransfer_suggest_parallelism` if unsure.",
                                 "default": "None",
                             },
                             "distribute_key_column": {
                                 "type": "string",
-                                "description": "Column for data distribution. Required when method is RangeId, Random, Ntile, or DataDriven.",
+                                "description": "Column name used to partition data across threads. Required when method is RangeId, Random, Ntile, or DataDriven. Should be a high-cardinality column (e.g., primary key) for even distribution. Not needed for Ctid, Rowid, Physloc, or None methods.",
                             },
                             "degree": {
                                 "type": "integer",
-                                "description": "Parallelism degree",
+                                "description": "Parallelism degree. 0 = use all CPU cores. Positive integer = exact thread count. Negative integer = cores / abs(value), e.g. -2 on 16 cores = 8 threads.",
                                 "default": -2,
                             },
                             "load_mode": {
                                 "type": "string",
                                 "enum": [e.value for e in LoadMode],
-                                "description": "Load mode",
+                                "description": "Load mode. Append: add rows to existing data (safe, default). Truncate: delete all existing rows before loading (use when you want a full refresh). Choose Truncate for idempotent full-table reloads; choose Append for incremental loads.",
                                 "default": "Append",
                             },
                             "batch_size": {
                                 "type": "integer",
-                                "description": "Batch size for bulk operations",
+                                "description": "Number of rows per batch insert. Higher values improve throughput but use more memory. Typical range: 1000-100000. Leave unset to use the FastTransfer default.",
                             },
                             "map_method": {
                                 "type": "string",
                                 "enum": [e.value for e in MapMethod],
-                                "description": "Column mapping method",
+                                "description": "Column mapping method. Position: maps columns by ordinal position (source col 1 to target col 1, etc.). Name: maps columns by matching column names (order-independent, safer when schemas differ).",
                                 "default": "Position",
                             },
                             "run_id": {
                                 "type": "string",
-                                "description": "Run ID for logging",
+                                "description": "Custom run identifier included in log output. Useful for correlating transfers in monitoring systems. If omitted, FastTransfer generates one automatically.",
                             },
                             "data_driven_query": {
                                 "type": "string",
-                                "description": "Custom SQL query for DataDriven parallelism method",
+                                "description": "Custom SQL query that returns the distinct partition values for DataDriven parallelism. Only used when method is DataDriven. If omitted, FastTransfer auto-generates a SELECT DISTINCT on the distribute_key_column.",
                             },
                             "use_work_tables": {
                                 "type": "boolean",
-                                "description": "Use intermediate work tables for CCI",
+                                "description": "Use intermediate work tables before final insert. Recommended when the target is a SQL Server Clustered Columnstore Index (CCI) table, as it avoids delta-store fragmentation. Not needed for heap or rowstore targets.",
                             },
                             "settings_file": {
                                 "type": "string",
-                                "description": "Path to custom settings JSON file",
+                                "description": "Absolute path to a custom FastTransfer settings JSON file. Overrides default settings for column mappings, data type conversions, etc. Only needed for advanced scenarios.",
                             },
                             "log_level": {
                                 "type": "string",
                                 "enum": [e.value for e in LogLevel],
-                                "description": "Override log level",
+                                "description": "Override the default log verbosity. Use Debug for troubleshooting, Verbose for detailed progress, Information for normal operation, Warning/Error for quiet runs.",
                             },
                             "no_banner": {
                                 "type": "boolean",
-                                "description": "Suppress the FastTransfer banner",
+                                "description": "Suppress the FastTransfer startup banner in output. Useful for cleaner log parsing. No effect on transfer behavior.",
                             },
                             "license_path": {
                                 "type": "string",
-                                "description": "Path or URL to license file",
+                                "description": "Absolute file path or URL to the FastTransfer license file. Only needed if the license is not in the default location next to the binary.",
                             },
                         },
                     },
@@ -253,9 +255,10 @@ def create_tools(
         Tool(
             name="fasttransfer_execute_transfer",
             description=(
-                "Execute a FastTransfer command that was previously previewed. "
-                "IMPORTANT: You must set confirmation=true to execute. "
-                "Call `fasttransfer_preview_transfer` first to review the command before executing."
+                "Execute a FastTransfer command that was previously built by fasttransfer_preview_transfer. "
+                "Requires confirmation=true as a safety gate. "
+                "Does NOT build the command — the command string must come from a prior fasttransfer_preview_transfer call. "
+                "Will fail if the FastTransfer binary is not installed."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=False,
@@ -268,11 +271,11 @@ def create_tools(
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "The exact command from fasttransfer_preview_transfer (including actual passwords)",
+                        "description": "The full command string from fasttransfer_preview_transfer output (the unmasked version with actual passwords). Do not modify this string.",
                     },
                     "confirmation": {
                         "type": "boolean",
-                        "description": "Must be true to execute. This confirms the user has reviewed the command.",
+                        "description": "Safety gate. Must be explicitly set to true to execute. false or omitted = execution is blocked. Always confirm with the user before setting to true.",
                     },
                 },
                 "required": ["command", "confirmation"],
@@ -281,10 +284,9 @@ def create_tools(
         Tool(
             name="fasttransfer_validate_connection",
             description=(
-                "Validate database connection parameters before building a transfer command. "
-                "This checks that all required parameters are provided but does NOT "
-                "actually test connectivity (would require database access). "
-                "Call this before `fasttransfer_preview_transfer` to catch parameter issues early."
+                "Check that database connection parameters are complete and well-formed BEFORE building a transfer command. "
+                "Validates parameter presence only — does NOT test actual database connectivity. "
+                "Call this before fasttransfer_preview_transfer for both source and target connections."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -300,37 +302,37 @@ def create_tools(
                         "properties": {
                             "type": {
                                 "type": "string",
-                                "description": "Connection type",
+                                "description": "Database connection type. Use a SourceConnectionType value when side='source' or a TargetConnectionType value when side='target' (e.g., 'pgsql', 'mssql', 'oraodp', 'mysql').",
                             },
                             "server": {
                                 "type": "string",
-                                "description": "Server address",
+                                "description": "Server address in host:port format (e.g., 'localhost:5432') or host\\instance for SQL Server (e.g., 'myserver\\SQLEXPRESS').",
                             },
                             "database": {
                                 "type": "string",
-                                "description": "Database name",
+                                "description": "Database or service name to connect to.",
                             },
-                            "user": {"type": "string", "description": "Username"},
-                            "password": {"type": "string", "description": "Password"},
+                            "user": {"type": "string", "description": "Database username. Required unless using trusted_auth, connect_string, or dsn."},
+                            "password": {"type": "string", "description": "Database password. Required when user is provided and not using trusted_auth."},
                             "connect_string": {
                                 "type": "string",
-                                "description": "Full connection string (alternative to server/user/password)",
+                                "description": "Full native connection string. Use this instead of server/user/password when the database requires a custom format (e.g., Oracle TNS, complex SQL Server options).",
                             },
                             "dsn": {
                                 "type": "string",
-                                "description": "ODBC DSN name",
+                                "description": "ODBC Data Source Name. Use when connecting via a pre-configured system or user DSN instead of server/user/password.",
                             },
                             "provider": {
                                 "type": "string",
-                                "description": "OleDB provider name",
+                                "description": "OLE DB provider name. Only needed for OLE DB connection types.",
                             },
                             "trusted_auth": {
                                 "type": "boolean",
-                                "description": "Use trusted authentication",
+                                "description": "Use Windows trusted (integrated) authentication instead of username/password. Only available on Windows with SQL Server.",
                             },
                             "file_input": {
                                 "type": "string",
-                                "description": "File path for data input",
+                                "description": "Absolute path to a data file to use as source input instead of a database table. Only valid for source-side connections.",
                             },
                         },
                         "required": ["type", "database"],
@@ -338,7 +340,7 @@ def create_tools(
                     "side": {
                         "type": "string",
                         "enum": ["source", "target"],
-                        "description": "Connection side",
+                        "description": "Which side of the transfer this connection is for. source = the database to read from. target = the database to write to.",
                     },
                 },
                 "required": ["connection", "side"],
@@ -347,8 +349,9 @@ def create_tools(
         Tool(
             name="fasttransfer_list_combinations",
             description=(
-                "List all supported source to target database combinations. "
-                "Call this first to discover which database pairs FastTransfer supports before building a transfer command."
+                "List all supported source-to-target database pairs for FastTransfer. "
+                "Call this when the user asks what databases are supported or to verify a specific source-to-target combination is valid. "
+                "Returns a matrix of supported pairs. Does not require any parameters."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -361,9 +364,9 @@ def create_tools(
         Tool(
             name="fasttransfer_suggest_parallelism",
             description=(
-                "Suggest the optimal parallelism method based on source database type "
-                "and table characteristics. Call this before `fasttransfer_preview_transfer` to choose "
-                "the right method and degree for best performance."
+                "Get a single recommended parallelism method based on source database type and table characteristics. "
+                "Call this when the user has not specified a parallelism method before building a transfer command. "
+                "Returns one recommended method with rationale. Does NOT execute anything."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -376,21 +379,22 @@ def create_tools(
                 "properties": {
                     "source_type": {
                         "type": "string",
-                        "description": "Source database type (e.g., 'pgsql', 'oraodp', 'mssql')",
+                        "enum": [e.value for e in SourceConnectionType],
+                        "description": "Source database type. Must match one of the supported source connection types (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle ODP.NET, 'mysql' for MySQL).",
                     },
                     "has_numeric_key": {
                         "type": "boolean",
-                        "description": "Whether the table has a numeric key column",
+                        "description": "Whether the table has a numeric primary/unique key column. true = enables RangeId, Ntile, Random methods. false = limits to physical-location methods (Ctid, Rowid, Physloc) or DataDriven.",
                     },
                     "has_identity_column": {
                         "type": "boolean",
-                        "description": "Whether the table has an identity/auto-increment column",
+                        "description": "Whether the table has an identity/auto-increment column. true = RangeId is especially effective due to sequential distribution. false = other methods may be preferred.",
                         "default": False,
                     },
                     "table_size_estimate": {
                         "type": "string",
                         "enum": ["small", "medium", "large"],
-                        "description": "Estimated table size",
+                        "description": "Estimated table size. small = under 100K rows, parallelism may not help. medium = 100K-10M rows, moderate parallelism recommended. large = over 10M rows, high parallelism degree recommended.",
                     },
                 },
                 "required": ["source_type", "has_numeric_key", "table_size_estimate"],
@@ -399,9 +403,10 @@ def create_tools(
         Tool(
             name="fasttransfer_get_version",
             description=(
-                "Get the detected FastTransfer binary version, capabilities, "
-                "and supported source/target types. "
-                "Use this to check which features are available in the installed version."
+                "Report the installed FastTransfer binary version and its supported capabilities "
+                "(database types, parallelism methods, features). "
+                "Call this to check feature availability or diagnose version-related issues. "
+                "Does not require database connectivity."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -415,8 +420,9 @@ def create_tools(
             name="fasttransfer_suggest_workflow",
             description=(
                 "Get a step-by-step workflow guide for transferring data between databases with FastTransfer, "
-                "including database-specific tips and recommended parallelism methods. "
-                "Call this early in your workflow to plan the right sequence of tool calls."
+                "including database-specific tips. "
+                "Call this early in the workflow to plan the right sequence of tool calls. "
+                "Does not execute anything."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -429,16 +435,18 @@ def create_tools(
                 "properties": {
                     "source_type": {
                         "type": "string",
-                        "description": "Source database type (e.g., 'pgsql', 'mssql', 'oraodp', 'mysql')",
+                        "enum": [e.value for e in SourceConnectionType],
+                        "description": "Source database type. Must match one of the supported source connection types (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle ODP.NET, 'mysql' for MySQL).",
                     },
                     "target_type": {
                         "type": "string",
-                        "description": "Target database type (e.g., 'pgsql', 'mssql', 'oraodp', 'mysql')",
+                        "enum": [e.value for e in TargetConnectionType],
+                        "description": "Target database type. Must match one of the supported target connection types (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle ODP.NET, 'mysql' for MySQL).",
                     },
                     "table_size_estimate": {
                         "type": "string",
                         "enum": ["small", "medium", "large"],
-                        "description": "Estimated table size to tailor parallelism advice",
+                        "description": "Estimated table size to tailor parallelism advice. small = under 100K rows. medium = 100K-10M rows. large = over 10M rows.",
                         "default": "medium",
                     },
                 },
@@ -641,16 +649,22 @@ def create_tools(
                 response.extend(["", "## Error Output:", "```", stderr, "```"])
 
             if not success:
-                response.extend(
-                    [
-                        "",
-                        "## Troubleshooting:",
-                        "- Check database credentials and connectivity",
-                        "- Verify table/schema names exist",
-                        "- Check FastTransfer documentation for error details",
-                        "- Review the full log file for more information",
-                    ]
-                )
+                diagnostics = diagnose_cli_error(stdout or "", stderr or "", return_code)
+                if diagnostics:
+                    response.append("")
+                    response.append("## Diagnostics:")
+                    for diag in diagnostics:
+                        response.append(f"- {diag}")
+                else:
+                    response.extend(
+                        [
+                            "",
+                            "## Troubleshooting:",
+                            "- Check database credentials and connectivity",
+                            "- Verify table/schema names exist",
+                            "- Review the full log file for more information",
+                        ]
+                    )
 
             return [TextContent(type="text", text="\n".join(response))]
 
@@ -779,30 +793,35 @@ def create_tools(
                 request.table_size_estimate,
             )
 
+            # Recommend degree based on table size
+            size = request.table_size_estimate.lower()
+            if size == "small":
+                suggested_degree = 1
+                degree_rationale = "Small table — parallelism overhead may exceed benefit."
+            elif size == "medium":
+                suggested_degree = 4
+                degree_rationale = "Medium table — 4 threads is a good balance."
+            else:
+                suggested_degree = 0
+                degree_rationale = "Large table — use all CPU cores (degree=0) for maximum throughput."
+
             response = [
-                "# Parallelism Method Recommendation",
+                "# Parallelism Recommendation",
                 "",
-                f"**Recommended Method**: `{suggestion['method']}`",
+                f"**Method**: `{suggestion['method']}`",
+                f"**Degree**: `{suggested_degree}` — {degree_rationale}",
                 "",
-                "## Explanation:",
+                "## Rationale:",
                 suggestion["explanation"],
                 "",
-                "## Your Table Characteristics:",
-                f"- Source Database: {request.source_type}",
-                f"- Has Numeric Key: {'Yes' if request.has_numeric_key else 'No'}",
-                f"- Has Identity Column: {'Yes' if request.has_identity_column else 'No'}",
-                f"- Table Size: {request.table_size_estimate.capitalize()}",
-                "",
-                "## Other Considerations:",
-                "- **Ctid**: Best for PostgreSQL (no key column needed)",
-                "- **Rowid**: Best for Oracle (no key column needed)",
-                "- **Physloc**: Best for SQL Server without numeric key",
-                "- **RangeId**: Requires numeric key with good distribution",
-                "- **Random**: Requires numeric key, uses modulo distribution",
-                "- **DataDriven**: Works with any data type, uses distinct values",
-                "- **Ntile**: Even distribution, works with numeric/date/string columns",
-                "- **None**: Single-threaded, best for small tables or troubleshooting",
+                "## Next step:",
+                "Call `fasttransfer_preview_transfer` with:",
+                f"- `method`: `{suggestion['method']}`",
+                f"- `degree`: `{suggested_degree}`",
             ]
+
+            if suggestion['method'] in ("Ntile", "DataDriven", "RangeId", "Random"):
+                response.append("- `distribute_key_column`: your key column name")
 
             return [TextContent(type="text", text="\n".join(response))]
 

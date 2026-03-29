@@ -17,6 +17,8 @@ from pydantic import ValidationError
 from .validators import (
     MigrationParams,
     TaskType,
+    SourceDatabaseType,
+    TargetDatabaseType,
     MigrationDbMode,
     LoadMode,
     FkMode,
@@ -29,6 +31,7 @@ from .command_builder import (
     suggest_workflow,
 )
 from .version import check_version_compatibility
+from src.base.error_patterns import diagnose_cli_error
 
 
 logger = logging.getLogger(__name__)
@@ -127,11 +130,11 @@ def create_tools(
         Tool(
             name="migratorxpress_preview_command",
             description=(
-                "Build and preview a MigratorXpress CLI command WITHOUT executing it. "
-                "This shows the exact command that will be run. "
-                "Call `migratorxpress_suggest_workflow` first to plan the right task sequence. "
-                "After previewing, use `migratorxpress_execute_command` to run the command. "
-                "License text is masked in the display output."
+                "Build and preview a MigratorXpress migration command WITHOUT executing it. "
+                "Call this after migratorxpress_validate_auth_file and migratorxpress_suggest_workflow. "
+                "Shows the exact CLI command with passwords masked. "
+                "Does NOT execute the migration or validate database connectivity. "
+                "After reviewing, pass the command to migratorxpress_execute_command."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -179,8 +182,9 @@ def create_tools(
                         "items": {
                             "type": "string",
                             "enum": [t.value for t in TaskType],
+                            "description": "translate: convert DDL from source to target syntax. create: create tables in target. transfer: copy data with FastTransfer. diff: compare row counts. copy_pk/copy_ak/copy_fk: copy constraints. all: run full migration.",
                         },
-                        "description": "Tasks to run (e.g., ['translate', 'create', 'transfer'] for full migration, or ['diff'] for validation). Call `migratorxpress_suggest_workflow` to get the recommended task sequence.",
+                        "description": "Tasks to run (e.g., ['translate', 'create', 'transfer'] for full migration, or ['diff'] for validation). Call migratorxpress_suggest_workflow to get the recommended task sequence.",
                     },
                     "resume": {
                         "type": "string",
@@ -213,7 +217,7 @@ def create_tools(
                     "migration_db_mode": {
                         "type": "string",
                         "enum": [m.value for m in MigrationDbMode],
-                        "description": "Migration database mode: preserve (keep), truncate (clear data), drop (recreate)",
+                        "description": "How to handle existing target database objects. preserve: keep existing objects. truncate: empty tables before loading. drop: drop and recreate objects.",
                     },
                     "compute_nbrows": {
                         "type": "string",
@@ -228,7 +232,7 @@ def create_tools(
                     "load_mode": {
                         "type": "string",
                         "enum": [m.value for m in LoadMode],
-                        "description": "Data load mode: truncate (clear target first) or append",
+                        "description": "How to load data into target tables. truncate: clear target before loading. append: add to existing data.",
                     },
                     "include_tables": {
                         "type": "string",
@@ -286,7 +290,7 @@ def create_tools(
                     "fk_mode": {
                         "type": "string",
                         "enum": [m.value for m in FkMode],
-                        "description": "Foreign key mode: trusted, untrusted, or disabled",
+                        "description": "How to handle foreign key constraints. trusted: create as trusted. untrusted: create and verify. disabled: skip FK creation.",
                     },
                     "log_level": {
                         "type": "string",
@@ -340,9 +344,10 @@ def create_tools(
         Tool(
             name="migratorxpress_execute_command",
             description=(
-                "Execute a MigratorXpress command that was previously previewed. "
-                "IMPORTANT: You must set confirmation=true to execute. "
-                "Call `migratorxpress_preview_command` first to review the command before executing."
+                "Execute a MigratorXpress command that was previously built by migratorxpress_preview_command. "
+                "Requires confirmation=true as a safety gate. "
+                "The command string must come from a prior migratorxpress_preview_command call. "
+                "Will fail if the MigratorXpress binary is not installed."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=False,
@@ -355,11 +360,11 @@ def create_tools(
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "The exact command from preview_command (space-separated)",
+                        "description": "The full MigratorXpress command string copied from the migratorxpress_preview_command output (space-separated arguments).",
                     },
                     "confirmation": {
                         "type": "boolean",
-                        "description": "Must be true to execute. This confirms the user has reviewed the command.",
+                        "description": "Safety gate: must be set to true to allow execution. Confirms the user has reviewed the previewed command.",
                     },
                 },
                 "required": ["command", "confirmation"],
@@ -368,9 +373,10 @@ def create_tools(
         Tool(
             name="migratorxpress_validate_auth_file",
             description=(
-                "Validate that an authentication file exists, is valid JSON, "
-                "and optionally check for specific auth_id entries. "
-                "Call this before `migratorxpress_preview_command` to verify credentials are set up correctly."
+                "Validate that a MigratorXpress JSON credentials file is well-formed and contains "
+                "the required fields (auth_id, db_type, connection parameters). "
+                "Call this before migratorxpress_preview_command to catch credential issues early. "
+                "Does NOT test actual database connectivity."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -383,12 +389,12 @@ def create_tools(
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "Path to the authentication JSON file",
+                        "description": "Absolute or relative path to the MigratorXpress JSON credentials file to validate.",
                     },
                     "required_auth_ids": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Optional list of auth_id values that must be present",
+                        "description": "Optional list of auth_id values that must exist in the credentials file. Use this to verify source, target, and migration DB credentials are all present before building a command.",
                     },
                 },
                 "required": ["file_path"],
@@ -397,9 +403,10 @@ def create_tools(
         Tool(
             name="migratorxpress_list_capabilities",
             description=(
-                "List supported source databases, target databases, migration database types, "
-                "tasks, migration DB modes, load modes, and FK modes. "
-                "Call this first to discover what MigratorXpress supports before building a command."
+                "List all supported source and target database platforms, migration tasks, "
+                "and modes for MigratorXpress. Call this when the user asks what databases or "
+                "migration paths are supported. Returns structured capability information. "
+                "Does not require any parameters."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -412,9 +419,10 @@ def create_tools(
         Tool(
             name="migratorxpress_suggest_workflow",
             description=(
-                "Given a source database type, target database type, and optional constraint flag, "
-                "suggest the full sequence of MigratorXpress tasks with example commands. "
-                "Call this first to plan your migration before using `migratorxpress_preview_command`."
+                "Get the recommended task sequence for a cross-platform database migration "
+                "(e.g., Oracle -> PostgreSQL). Call this FIRST to understand which tasks to run "
+                "and in what order (translate -> create -> transfer -> copy_pk -> copy_ak -> copy_fk). "
+                "Does not execute anything."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -427,16 +435,18 @@ def create_tools(
                 "properties": {
                     "source_type": {
                         "type": "string",
-                        "description": "Source database type (e.g., 'oracle', 'postgresql', 'sqlserver', 'netezza')",
+                        "enum": [e.value for e in SourceDatabaseType],
+                        "description": "Source database platform to migrate from",
                     },
                     "target_type": {
                         "type": "string",
-                        "description": "Target database type (e.g., 'postgresql', 'sqlserver')",
+                        "enum": [e.value for e in TargetDatabaseType],
+                        "description": "Target database platform to migrate to",
                     },
                     "include_constraints": {
                         "type": "boolean",
                         "default": True,
-                        "description": "Whether to include constraint copy steps (PK, AK, FK)",
+                        "description": "Whether to include constraint copy steps (copy_pk, copy_ak, copy_fk) in the suggested workflow. Set to false for data-only migrations.",
                     },
                 },
                 "required": ["source_type", "target_type"],
@@ -445,9 +455,9 @@ def create_tools(
         Tool(
             name="migratorxpress_get_version",
             description=(
-                "Get the detected MigratorXpress binary version, capabilities, "
-                "and supported databases, tasks, and modes. "
-                "Use this to check which features are available in the installed version."
+                "Report the installed MigratorXpress binary version and its supported capabilities. "
+                "Call this to check feature availability or diagnose version-related issues. "
+                "Does not require database connectivity."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -648,17 +658,22 @@ def create_tools(
                 response.extend(["", "## Error Output:", "```", stderr, "```"])
 
             if not success:
-                response.extend(
-                    [
-                        "",
-                        "## Troubleshooting:",
-                        "- Check the auth file path and credential IDs",
-                        "- Verify source and target database connectivity",
-                        "- Check migration database connectivity",
-                        "- Verify database names and schema names are correct",
-                        "- Review the full log file for more information",
-                    ]
-                )
+                diagnostics = diagnose_cli_error(stdout or "", stderr or "", return_code)
+                if diagnostics:
+                    response.append("")
+                    response.append("## Diagnostics:")
+                    for diag in diagnostics:
+                        response.append(f"- {diag}")
+                else:
+                    response.extend(
+                        [
+                            "",
+                            "## Troubleshooting:",
+                            "- Check the authentication file and database credentials",
+                            "- Verify source and target database connectivity",
+                            "- Review the full log file for more information",
+                        ]
+                    )
 
             return [TextContent(type="text", text="\n".join(response))]
 

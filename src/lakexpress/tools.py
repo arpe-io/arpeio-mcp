@@ -20,8 +20,12 @@ from .validators import (
     CompressionType,
     ErrorAction,
     LogLevel,
+    LogDatabaseType,
     PublishMethod,
+    PublishTarget,
     CleanupStatus,
+    SourceDatabaseType,
+    StorageBackend,
 )
 from .command_builder import (
     CommandBuilder,
@@ -30,6 +34,7 @@ from .command_builder import (
     suggest_workflow,
 )
 from .version import check_version_compatibility
+from src.base.error_patterns import diagnose_cli_error
 
 
 logger = logging.getLogger(__name__)
@@ -70,9 +75,10 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             name="lakexpress_preview_command",
             description=(
                 "Build and preview a LakeXpress CLI command WITHOUT executing it. "
-                "This shows the exact command that will be run. "
-                "Call `lakexpress_suggest_workflow` first to determine the right command sequence. "
-                "After previewing, use `lakexpress_execute_command` to run the command."
+                "Call this after lakexpress_suggest_workflow to build each command in the recommended sequence. "
+                "Shows the exact command that will be run. "
+                "Does NOT execute the command or validate connections. "
+                "After reviewing, pass the command to lakexpress_execute_command."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -86,7 +92,15 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                     "command": {
                         "type": "string",
                         "enum": [e.value for e in CommandType],
-                        "description": "The LakeXpress command to execute",
+                        "description": (
+                            "The LakeXpress command to run. "
+                            "logdb_init/lxdb_init: initialize databases. "
+                            "config_create: set up sync configuration. "
+                            "sync/sync_export/sync_publish: execute pipeline steps. "
+                            "run: full pipeline execution. "
+                            "status: check pipeline status. "
+                            "cleanup: remove completed data."
+                        ),
                     },
                     "logdb_init": {
                         "type": "object",
@@ -1034,9 +1048,10 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
         Tool(
             name="lakexpress_execute_command",
             description=(
-                "Execute a LakeXpress command that was previously previewed. "
-                "IMPORTANT: You must set confirmation=true to execute. "
-                "Call `lakexpress_preview_command` first to review the command before executing."
+                "Execute a LakeXpress command that was previously built by lakexpress_preview_command. "
+                "Requires confirmation=true as a safety gate. "
+                "The command string must come from a prior lakexpress_preview_command call. "
+                "Will fail if the LakeXpress binary is not installed."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=False,
@@ -1049,11 +1064,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "The exact command from preview_command (space-separated)",
+                        "description": "The exact command string from a prior lakexpress_preview_command call. Must be passed as-is without modification.",
                     },
                     "confirmation": {
                         "type": "boolean",
-                        "description": "Must be true to execute. This confirms the user has reviewed the command.",
+                        "description": "Safety gate: must be true to execute. Set to true only after the user has reviewed the previewed command.",
                     },
                 },
                 "required": ["command", "confirmation"],
@@ -1062,9 +1077,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
         Tool(
             name="lakexpress_list_capabilities",
             description=(
-                "List supported source databases, log databases, storage backends, "
-                "publishing targets, compression types, and available commands. "
-                "Call this first to discover what LakeXpress supports before building a command."
+                "List all supported source databases, log databases, storage backends, "
+                "and publish targets for LakeXpress. "
+                "Call this when the user asks what databases or cloud targets are supported. "
+                "Returns structured capability information. "
+                "Does not require any parameters or database connectivity."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -1077,9 +1094,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
         Tool(
             name="lakexpress_suggest_workflow",
             description=(
-                "Given a use case (source DB type, storage destination, optional publish target), "
-                "suggest the full sequence of LakeXpress commands with example parameters. "
-                "Call this first to plan your workflow before using `lakexpress_preview_command`."
+                "Get the recommended sequence of LakeXpress commands for a specific use case "
+                "(e.g., sync Oracle to Snowflake). "
+                "Call this FIRST before building any commands -- LakeXpress requires multiple commands "
+                "in a specific order (logdb_init -> config_create -> sync/run). "
+                "Does not execute anything."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -1092,15 +1111,18 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                 "properties": {
                     "source_type": {
                         "type": "string",
-                        "description": "Source database type (e.g., 'sqlserver', 'postgresql', 'oracle')",
+                        "enum": [e.value for e in SourceDatabaseType],
+                        "description": "Source database type to sync from. Use lakexpress_list_capabilities if unsure which types are supported.",
                     },
                     "destination": {
                         "type": "string",
-                        "description": "Storage destination (e.g., 'local', 's3', 'azure_adls', 'gcs')",
+                        "enum": [e.value for e in StorageBackend],
+                        "description": "Storage backend where exported data will land. Use 'local' for filesystem, or a cloud option for remote storage.",
                     },
                     "publish_target": {
                         "type": "string",
-                        "description": "Optional publishing target (e.g., 'snowflake', 'databricks', 'fabric')",
+                        "enum": [e.value for e in PublishTarget],
+                        "description": "Optional data warehouse or lakehouse to publish into after export. Omit if you only need file-level export without publishing.",
                     },
                 },
                 "required": ["source_type", "destination"],
@@ -1109,9 +1131,9 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
         Tool(
             name="lakexpress_get_version",
             description=(
-                "Get the detected LakeXpress binary version, capabilities, "
-                "and supported databases, storage backends, and publishing targets. "
-                "Use this to check which features are available in the installed version."
+                "Report the installed LakeXpress binary version and its supported capabilities. "
+                "Call this to check feature availability or diagnose version-related issues. "
+                "Does not require database connectivity."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -1317,16 +1339,22 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                 response.extend(["", "## Error Output:", "```", stderr, "```"])
 
             if not success:
-                response.extend(
-                    [
-                        "",
-                        "## Troubleshooting:",
-                        "- Check the auth file path and credential IDs",
-                        "- Verify log database connectivity",
-                        "- Check sync_id exists in the configuration",
-                        "- Review the full log file for more information",
-                    ]
-                )
+                diagnostics = diagnose_cli_error(stdout or "", stderr or "", return_code)
+                if diagnostics:
+                    response.append("")
+                    response.append("## Diagnostics:")
+                    for diag in diagnostics:
+                        response.append(f"- {diag}")
+                else:
+                    response.extend(
+                        [
+                            "",
+                            "## Troubleshooting:",
+                            "- Check the authentication file and credentials",
+                            "- Verify database connectivity",
+                            "- Review the full log file for more information",
+                        ]
+                    )
 
             return [TextContent(type="text", text="\n".join(response))]
 

@@ -29,6 +29,7 @@ from .validators import (
     ApplicationIntent,
     BoolFormat,
 )
+from src.base.error_patterns import diagnose_cli_error
 from .command_builder import CommandBuilder, FastBCPError, get_supported_formats, suggest_parallelism_method
 from .version import check_version_compatibility
 
@@ -137,9 +138,10 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             name="fastbcp_preview_export",
             description=(
                 "Build and preview a FastBCP export command WITHOUT executing it. "
-                "This shows the exact command that will be run, with passwords masked. "
-                "Call `fastbcp_suggest_parallelism` first to choose the optimal parallelism method. "
-                "After previewing, use `fastbcp_execute_export` to run the command."
+                "Call this after fastbcp_validate_connection and fastbcp_suggest_parallelism. "
+                "Shows the exact CLI command with passwords masked. "
+                "Does NOT test connectivity or execute the export. "
+                "After reviewing, pass the command to fastbcp_execute_export."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -211,7 +213,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             "format": {
                                 "type": "string",
                                 "enum": [e.value for e in OutputFormat],
-                                "description": "Output file format",
+                                "description": "Output file format. csv/tsv: delimited text. parquet: columnar, compressed, ideal for analytics. json: one JSON object per line (JSONL). bson: binary JSON. xlsx: Excel spreadsheet. binary: raw binary format.",
                             },
                             "file_output": {
                                 "type": "string",
@@ -224,7 +226,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             "storage_target": {
                                 "type": "string",
                                 "enum": [e.value for e in StorageTarget],
-                                "description": "Storage target for output",
+                                "description": "Where to write output files. local: local filesystem. s3/s3compatible: Amazon S3 or compatible. azure_blob/azure_datalake: Azure storage. fabric_onelake: Microsoft Fabric. gcs: Google Cloud Storage. Cloud targets require a cloud_profile.",
                                 "default": "local",
                             },
                             "delimiter": {
@@ -270,7 +272,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             },
                             "merge": {
                                 "type": "boolean",
-                                "description": "Merge parallel output files",
+                                "description": "Merge parallel output files into one. true = slower but produces a single file. false (default) = faster, produces N files (one per thread), better for parallel downstream import.",
                                 "default": False,
                             },
                         },
@@ -282,7 +284,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             "method": {
                                 "type": "string",
                                 "enum": [e.value for e in ParallelismMethod],
-                                "description": "Parallelism method. Call `fastbcp_suggest_parallelism` first to get the optimal method for your source database and table.",
+                                "description": "Parallelism method. Ntile: even distribution on numeric key. DataDriven: distinct value partitions, works with any data type. Physloc: SQL Server physical location (no key needed). Ctid: PostgreSQL physical tuple ID (no key needed). Rowid: Oracle physical ROWID (no key needed). RangeId: numeric min/max range. Random: modulo-based approximate distribution. Timepartition: partition by time column (FastBCP 0.30+). NZDataSlice: Netezza native slicing. None: single-threaded. Call `fastbcp_suggest_parallelism` if unsure.",
                                 "default": "None",
                             },
                             "distribute_key_column": {
@@ -291,13 +293,13 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             },
                             "degree": {
                                 "type": "integer",
-                                "description": "Parallelism degree",
+                                "description": "Parallelism degree. 0 = use all CPU cores. Positive integer = exact thread count. Negative integer = cores / abs(value), e.g. -2 on 16 cores = 8 threads. Default 1 = single-threaded.",
                                 "default": 1,
                             },
                             "load_mode": {
                                 "type": "string",
                                 "enum": [e.value for e in LoadMode],
-                                "description": "Load mode",
+                                "description": "How to handle existing output. Append: add to existing files. Truncate: overwrite existing output before writing.",
                                 "default": "Append",
                             },
                             "batch_size": {
@@ -358,9 +360,10 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
         Tool(
             name="fastbcp_execute_export",
             description=(
-                "Execute a FastBCP export command that was previously previewed. "
-                "IMPORTANT: You must set confirmation=true to execute. "
-                "Call `fastbcp_preview_export` first to review the command before executing."
+                "Execute a FastBCP export command that was previously built by fastbcp_preview_export. "
+                "Requires confirmation=true as a safety gate. "
+                "Does NOT build the command — the command string must come from a prior fastbcp_preview_export call. "
+                "Will fail if the FastBCP binary is not installed."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=False,
@@ -373,11 +376,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "The exact command from fastbcp_preview_export (including actual passwords)",
+                        "description": "The full command string from fastbcp_preview_export output (with actual passwords, not the masked version).",
                     },
                     "confirmation": {
                         "type": "boolean",
-                        "description": "Must be true to execute. This confirms the user has reviewed the command.",
+                        "description": "Safety gate — must be true to execute. Confirms the user has reviewed the command from fastbcp_preview_export.",
                     },
                 },
                 "required": ["command", "confirmation"],
@@ -386,10 +389,9 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
         Tool(
             name="fastbcp_validate_connection",
             description=(
-                "Validate source database connection parameters before building an export command. "
-                "This checks that all required parameters are provided but does NOT "
-                "actually test connectivity (would require database access). "
-                "Call this before `fastbcp_preview_export` to catch parameter issues early."
+                "Check that database connection parameters are complete and well-formed BEFORE building an export command. "
+                "Validates parameter presence only — does NOT test actual database connectivity. "
+                "Call this before fastbcp_preview_export to catch parameter issues early."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -448,8 +450,9 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
         Tool(
             name="fastbcp_list_formats",
             description=(
-                "List all supported source databases, output formats, and storage targets. "
-                "Call this first to discover what databases and formats FastBCP supports before building an export command."
+                "List all supported source databases, output formats, and storage targets for FastBCP. "
+                "Call this when the user asks what databases or formats are supported, or to verify a specific combination is valid. "
+                "Returns structured capability information. Does not require any parameters or database connectivity."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -462,9 +465,9 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
         Tool(
             name="fastbcp_suggest_parallelism",
             description=(
-                "Suggest the optimal parallelism method based on source database type "
-                "and table characteristics. Call this before `fastbcp_preview_export` to choose "
-                "the right method and degree for best performance."
+                "Get a single recommended parallelism method based on source database type and table characteristics. "
+                "Call this when the user has not specified a parallelism method before building an export command. "
+                "Returns one recommended method with rationale. Does NOT execute anything."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -477,21 +480,22 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "properties": {
                     "source_type": {
                         "type": "string",
-                        "description": "Source database type (e.g., 'pgsql', 'oraodp', 'mssql')",
+                        "enum": [e.value for e in SourceConnectionType],
+                        "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle)",
                     },
                     "has_numeric_key": {
                         "type": "boolean",
-                        "description": "Whether the table has a numeric key column",
+                        "description": "Whether the table has a numeric key column (integer primary key or identity column). Determines whether Ntile/RangeId methods can be used.",
                     },
                     "has_identity_column": {
                         "type": "boolean",
-                        "description": "Whether the table has an identity/auto-increment column",
+                        "description": "Whether the table has an identity/auto-increment column. If true, RangeId is a strong candidate for SQL Server.",
                         "default": False,
                     },
                     "table_size_estimate": {
                         "type": "string",
                         "enum": ["small", "medium", "large"],
-                        "description": "Estimated table size",
+                        "description": "Estimated table size. small: < 100K rows (parallelism may not help). medium: 100K-10M rows. large: > 10M rows (parallelism strongly recommended).",
                     },
                 },
                 "required": ["source_type", "has_numeric_key", "table_size_estimate"],
@@ -500,9 +504,10 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
         Tool(
             name="fastbcp_get_version",
             description=(
-                "Get the detected FastBCP binary version, capabilities, "
-                "and supported source types, output formats, and storage targets. "
-                "Use this to check which features are available in the installed version."
+                "Report the installed FastBCP binary version and its supported capabilities "
+                "(database types, output formats, parallelism methods, storage targets). "
+                "Call this to check feature availability or diagnose version-related issues. "
+                "Does not require database connectivity."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -517,7 +522,8 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             description=(
                 "Get a step-by-step workflow guide for exporting data with FastBCP, "
                 "including database-specific tips and recommended parallelism methods. "
-                "Call this early in your workflow to plan the right sequence of tool calls."
+                "Call this early to plan the right sequence of tool calls. "
+                "Does not execute anything or require database connectivity."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -530,15 +536,18 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "properties": {
                     "source_type": {
                         "type": "string",
-                        "description": "Source database type (e.g., 'pgsql', 'mssql', 'oraodp', 'mysql')",
+                        "enum": [e.value for e in SourceConnectionType],
+                        "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle)",
                     },
                     "output_format": {
                         "type": "string",
-                        "description": "Desired output format (e.g., 'parquet', 'csv', 'tsv', 'json', 'avro')",
+                        "enum": [e.value for e in OutputFormat],
+                        "description": "Desired output format. parquet: columnar, compressed, ideal for analytics. csv/tsv: delimited text. json: JSONL format. bson: binary JSON. xlsx: Excel.",
                     },
                     "storage_target": {
                         "type": "string",
-                        "description": "Storage target (e.g., 'local', 's3', 'azure', 'gcs'). Defaults to 'local'.",
+                        "enum": [e.value for e in StorageTarget],
+                        "description": "Where to write output files. local: local filesystem. s3/s3compatible: Amazon S3. azure_blob/azure_datalake: Azure. gcs: Google Cloud Storage. fabric_onelake: Microsoft Fabric.",
                         "default": "local",
                     },
                 },
@@ -743,17 +752,23 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 response.extend(["", "## Error Output:", "```", stderr, "```"])
 
             if not success:
-                response.extend(
-                    [
-                        "",
-                        "## Troubleshooting:",
-                        "- Check database credentials and connectivity",
-                        "- Verify table/schema names exist",
-                        "- Check output path is writable",
-                        "- Check FastBCP documentation for error details",
-                        "- Review the full log file for more information",
-                    ]
-                )
+                diagnostics = diagnose_cli_error(stdout or "", stderr or "", return_code)
+                if diagnostics:
+                    response.append("")
+                    response.append("## Diagnostics:")
+                    for diag in diagnostics:
+                        response.append(f"- {diag}")
+                else:
+                    response.extend(
+                        [
+                            "",
+                            "## Troubleshooting:",
+                            "- Check database credentials and connectivity",
+                            "- Verify table/schema names exist",
+                            "- Check output path is writable",
+                            "- Review the full log file for more information",
+                        ]
+                    )
 
             return [TextContent(type="text", text="\n".join(response))]
 
@@ -896,30 +911,36 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 request.table_size_estimate,
             )
 
+            # Recommend degree based on table size
+            size = request.table_size_estimate.lower()
+            if size == "small":
+                suggested_degree = 1
+                degree_rationale = "Small table — parallelism overhead may exceed benefit."
+            elif size == "medium":
+                suggested_degree = 4
+                degree_rationale = "Medium table — 4 threads is a good balance."
+            else:
+                suggested_degree = 0
+                degree_rationale = "Large table — use all CPU cores (degree=0) for maximum throughput."
+
             response = [
-                "# Parallelism Method Recommendation",
+                "# Parallelism Recommendation",
                 "",
-                f"**Recommended Method**: `{suggestion['method']}`",
+                f"**Method**: `{suggestion['method']}`",
+                f"**Degree**: `{suggested_degree}` — {degree_rationale}",
                 "",
-                "## Explanation:",
+                "## Rationale:",
                 suggestion["explanation"],
                 "",
-                "## Your Table Characteristics:",
-                f"- Source Database: {request.source_type}",
-                f"- Has Numeric Key: {'Yes' if request.has_numeric_key else 'No'}",
-                f"- Has Identity Column: {'Yes' if request.has_identity_column else 'No'}",
-                f"- Table Size: {request.table_size_estimate.capitalize()}",
-                "",
-                "## Other Considerations:",
-                "- **Ctid**: Best for PostgreSQL (no key column needed)",
-                "- **Rowid**: Best for Oracle (no key column needed)",
-                "- **Physloc**: Best for SQL Server without numeric key",
-                "- **RangeId**: Requires numeric key with good distribution",
-                "- **Random**: Requires numeric key, uses modulo distribution",
-                "- **DataDriven**: Works with any data type, uses distinct values",
-                "- **Ntile**: Even distribution, works with numeric/date/string columns",
-                "- **None**: Single-threaded, best for small tables or troubleshooting",
+                "## Next step:",
+                "Call `fastbcp_preview_export` with:",
+                f"- `method`: `{suggestion['method']}`",
+                f"- `degree`: `{suggested_degree}`",
             ]
+
+            if suggestion['method'] in ("Ntile", "DataDriven", "RangeId", "Random"):
+                response.append("- `distribute_key_column`: your key column name")
+
 
             return [TextContent(type="text", text="\n".join(response))]
 
