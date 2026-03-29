@@ -70,6 +70,7 @@ TOOL_CONFIGS = {
         "path": os.getenv("MIGRATORXPRESS_PATH", "./MigratorXpress"),
         "timeout": int(os.getenv("MIGRATORXPRESS_TIMEOUT", "3600")),
         "log_dir": Path(os.getenv("MIGRATORXPRESS_LOG_DIR", "./logs")),
+        "fasttransfer_dir_path": os.getenv("FASTTRANSFER_DIR_PATH", ""),
     },
 }
 

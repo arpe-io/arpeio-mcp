@@ -212,6 +212,7 @@ Then configure your AI assistant to use the `arpeio-mcp` command (stdio transpor
 | `LAKEXPRESS_PATH` | Path to LakeXpress binary | No |
 | `MIGRATORXPRESS_PATH` | Path to MigratorXpress binary | No |
 | `FASTBCP_DIR_PATH` | FastBCP directory for LakeXpress | No |
+| `FASTTRANSFER_DIR_PATH` | FastTransfer directory for MigratorXpress | No |
 | `*_TIMEOUT` | Per-tool execution timeout (seconds) | No |
 | `*_LOG_DIR` | Per-tool log directory | No |
 | `LOG_LEVEL` | Logging level (DEBUG/INFO/WARNING/ERROR) | No |

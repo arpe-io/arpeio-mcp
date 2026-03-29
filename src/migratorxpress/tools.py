@@ -125,6 +125,7 @@ def create_tools(
     timeout = config.get("timeout", 3600)
     log_dir = Path(config.get("log_dir", "./logs"))
     binary_path = config.get("path", "./MigratorXpress")
+    fasttransfer_dir_path = config.get("fasttransfer_dir_path", "")
 
     tools = [
         Tool(
@@ -489,6 +490,10 @@ def create_tools(
         try:
             # Extract os_type before passing to MigrationParams (not part of the model)
             os_type = arguments.pop("os_type", "linux")
+
+            # Auto-fill fasttransfer_dir_path from env var if not explicitly provided
+            if fasttransfer_dir_path and not arguments.get("fasttransfer_dir_path"):
+                arguments["fasttransfer_dir_path"] = fasttransfer_dir_path
 
             # Validate and parse parameters
             params = MigrationParams(**arguments)
