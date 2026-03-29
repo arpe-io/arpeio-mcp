@@ -216,7 +216,7 @@ Then configure your AI assistant to use the `arpeio-mcp` command (stdio transpor
 | `*_LOG_DIR` | Per-tool log directory | No |
 | `LOG_LEVEL` | Logging level (DEBUG/INFO/WARNING/ERROR) | No |
 
-## Available Tools (27)
+## Available Tools (28)
 
 ### FastBCP (7 tools)
 - `fastbcp_list_formats` — List supported databases, formats, and storage targets
@@ -251,9 +251,10 @@ Then configure your AI assistant to use the `arpeio-mcp` command (stdio transpor
 - `migratorxpress_execute_command` — Execute migration
 - `migratorxpress_get_version` — Report version and capabilities
 
-### Meta (2 tools)
+### Meta (3 tools)
 - `arpe_get_status` — Status of all tools (installed/command-builder-only)
-- `arpe_quick_start` — Workflow guide for any product
+- `arpe_quick_start` — Detect the right tool from a use case description and get a workflow guide
+- `search_docs` — Search arpe.io documentation and blog with BM25 full-text search
 
 ## License
 
