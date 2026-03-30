@@ -582,7 +582,13 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                             },
                             "fastbcp_table_config": {
                                 "type": "string",
-                                "description": "Per-table FastBCP config. Format: 'table1:method:key:degree;table2:method:key:degree'",
+                                "description": (
+                                    "Per-table parallelism override. This is how you configure parallelism methods "
+                                    "(Ntile, DataDriven, PhysLoc, Ctid, Rowid, RangeId, Random, Timepartition) in LakeXpress. "
+                                    "Format: 'schema.table:method:key:degree[;...]'. "
+                                    "Example: 'dbo.orders:Timepartition:o_orderdate:16;dbo.lineitem:Ntile:l_orderkey:8'. "
+                                    "LakeXpress does NOT have --parallelmethod or --parallelkey flags — use this parameter instead."
+                                ),
                             },
                             "publish_target": {
                                 "type": "string",

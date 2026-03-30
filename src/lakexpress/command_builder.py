@@ -623,4 +623,11 @@ def suggest_workflow(
         "destination": destination,
         "publish_target": publish_target,
         "steps": steps,
+        "parallelism_note": (
+            "To configure parallelism in LakeXpress, use config create parameters: "
+            "--fastbcp_p <degree> for global parallelism, or "
+            "--fastbcp_table_config 'schema.table:method:key:degree;...' for per-table overrides. "
+            "Available methods: Ntile, DataDriven, PhysLoc, Ctid, Rowid, RangeId, Random, Timepartition. "
+            "LakeXpress does NOT have --parallelmethod or --parallelkey flags."
+        ),
     }

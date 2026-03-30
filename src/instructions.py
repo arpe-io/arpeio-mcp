@@ -70,6 +70,19 @@ downstream consumer expects one file.
 thread). Better when the downstream system can import multiple files in \
 parallel (e.g. Spark, Snowflake COPY INTO, bulk loaders).
 
+## Parallelism in LakeXpress
+
+LakeXpress does NOT accept `--parallelmethod`, `--parallelkey`, or \
+`--paralleldegree` flags directly. Instead, configure parallelism through \
+`config create` parameters:
+- `--fastbcp_p <degree>` — global parallel degree for all tables.
+- `--fastbcp_table_config 'schema.table:method:key:degree;...'` — per-table \
+parallelism override. Example: \
+`'dbo.orders:Timepartition:o_orderdate:16;dbo.lineitem:Ntile:l_orderkey:8'`.
+
+Do NOT invent LakeXpress CLI flags. Always use `lakexpress_preview_command` \
+to build the correct command.
+
 ## Recommended Workflow
 
 Always follow this sequence when building a command:

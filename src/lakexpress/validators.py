@@ -236,7 +236,13 @@ class ConfigCreateParams(GlobalOptions):
     )
     fastbcp_table_config: Optional[str] = Field(
         None,
-        description="Per-table FastBCP config: 'table1:method:key:degree;table2:method:key:degree'",
+        description=(
+            "Per-table parallelism override — this is how you set parallelism methods "
+            "(Ntile, DataDriven, PhysLoc, Ctid, Rowid, RangeId, Random, Timepartition) in LakeXpress. "
+            "Format: 'schema.table:method:key:degree[;...]'. "
+            "Example: 'dbo.orders:Timepartition:o_orderdate:16;dbo.lineitem:Ntile:l_orderkey:8'. "
+            "LakeXpress does NOT have --parallelmethod or --parallelkey flags."
+        ),
     )
 
     # Publishing
