@@ -87,7 +87,7 @@ def _init_tool(name, builder_cls, create_tools_fn, config):
     try:
         builder = builder_cls(config["path"])
         if builder.preview_only:
-            logger.warning(f"{name}: binary not configured — execution disabled, command building available")
+            logger.info(f"{name}: command-builder mode (binary not configured, execution not available)")
         else:
             version_info = builder.get_version()
             if version_info["detected"]:
@@ -115,9 +115,10 @@ all_tools.append(
     Tool(
         name="arpe_get_status",
         description=(
-            "Show the installation status, version, and binary path of all four Arpe.io tools "
+            "Show the status of all four Arpe.io tools "
             "(FastBCP, FastTransfer, LakeXpress, MigratorXpress). "
-            "Call this to check which tools are installed and available for execution vs. command-building only. "
+            "All tools work in command-builder mode by default (no binary needed). "
+            "If a binary is installed, execution is also available. "
             "Does not require database connectivity or any parameters."
         ),
         annotations=ToolAnnotations(
@@ -225,12 +226,12 @@ async def handle_arpe_status() -> list[TextContent]:
         try:
             builder = builder_cls(config["path"])
             if builder.preview_only:
-                response.append("- **Status**: Command builder (execution not available)")
-                response.append("- **Download**: https://arpe.io")
+                response.append("- **Mode**: Command builder — build, preview, and validate commands (default mode, fully functional)")
+                response.append("- **Execution**: Install the binary from https://arpe.io to also run commands directly")
             else:
                 version_info = builder.get_version()
                 version_str = version_info.get("version", "Unknown")
-                response.append(f"- **Status**: Installed")
+                response.append(f"- **Mode**: Full (command builder + execution)")
                 response.append(f"- **Version**: {version_str}")
         except Exception as e:
             response.append(f"- **Status**: Error ({e})")
