@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4] - 2026-03-30
+
+### Changed
+
+- **LakeXpress parallelism guidance**: Added explicit documentation at multiple layers (MCP instructions, tool schemas, workflow output) clarifying that LakeXpress configures parallelism via `--fastbcp_p` and `--fastbcp_table_config`, not via non-existent `--parallelmethod`/`--parallelkey` flags. Prevents AI assistants from hallucinating CLI arguments.
+- **Command-builder mode messaging**: Reframed status output and tool descriptions to present command-builder mode as the normal fully functional default, not a problem. AI assistants previously misinterpreted "execution not available" as an error requiring user action.
+
 ## [0.1.3] - 2026-03-29
 
 ### Added
