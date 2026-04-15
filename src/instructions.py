@@ -25,6 +25,7 @@ Important relationships:
 - LakeXpress uses FastBCP internally for extraction — do NOT suggest both for the same task.
 - MigratorXpress uses FastTransfer internally for data movement — do NOT suggest both for the same task.
 - When the user's intent is unclear, call `arpe_quick_start` with a description of their use case.
+- When the user asks "what changed in version X", call the product-specific `*_release_notes` tool (e.g. `fastbcp_release_notes`, `lakexpress_release_notes`) instead of guessing.
 
 ## Parallelism Methods
 
@@ -69,6 +70,20 @@ downstream consumer expects one file.
 - **merge=false** (default): Faster, produces N files (one per parallel \
 thread). Better when the downstream system can import multiple files in \
 parallel (e.g. Spark, Snowflake COPY INTO, bulk loaders).
+
+## LakeXpress 0.4.0+ notes
+
+- The metadata-database subcommand was renamed from `logdb` to `lxdb` (e.g. \
+`lxdb init`, `lxdb drop`, `lxdb release-locks`). Legacy `logdb_*` command \
+types are still accepted by `lakexpress_preview_command` and route to the \
+new `lxdb` subcommands automatically.
+- The auth-id flag was renamed from `--log_db_auth_id` to `--lxdb_auth_id`. \
+The MCP emits the new flag for all commands regardless of which legacy \
+alias was requested.
+- **Teradata** is a supported source database as of 0.4.0.
+- **Amazon Redshift** is a supported publish target as of 0.4.0. Use \
+`--publish_method internal` for COPY into Redshift tables, or `external` \
+for Spectrum-style external tables sitting on S3.
 
 ## Parallelism in LakeXpress
 

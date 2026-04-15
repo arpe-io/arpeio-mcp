@@ -217,9 +217,9 @@ Then configure your AI assistant to use the `arpeio-mcp` command (stdio transpor
 | `*_LOG_DIR` | Per-tool log directory | No |
 | `LOG_LEVEL` | Logging level (DEBUG/INFO/WARNING/ERROR) | No |
 
-## Available Tools (28)
+## Available Tools (32)
 
-### FastBCP (7 tools)
+### FastBCP (8 tools)
 - `fastbcp_list_formats` — List supported databases, formats, and storage targets
 - `fastbcp_suggest_parallelism` — Recommend parallelism method for your table
 - `fastbcp_suggest_workflow` — Step-by-step export workflow with DB-specific tips
@@ -227,8 +227,9 @@ Then configure your AI assistant to use the `arpeio-mcp` command (stdio transpor
 - `fastbcp_preview_export` — Build and preview export command
 - `fastbcp_execute_export` — Execute export
 - `fastbcp_get_version` — Report version and capabilities
+- `fastbcp_release_notes` — Return release-notes text for a FastBCP version (optional `version` filter)
 
-### FastTransfer (7 tools)
+### FastTransfer (8 tools)
 - `fasttransfer_list_combinations` — List supported source-to-target database pairs
 - `fasttransfer_suggest_parallelism` — Recommend parallelism method for your table
 - `fasttransfer_suggest_workflow` — Step-by-step transfer workflow with tips
@@ -236,21 +237,24 @@ Then configure your AI assistant to use the `arpeio-mcp` command (stdio transpor
 - `fasttransfer_preview_transfer` — Build and preview transfer command
 - `fasttransfer_execute_transfer` — Execute transfer
 - `fasttransfer_get_version` — Report version and capabilities
+- `fasttransfer_release_notes` — Return release-notes text for a FastTransfer version
 
-### LakeXpress (5 tools)
+### LakeXpress (6 tools)
 - `lakexpress_list_capabilities` — List supported databases, backends, and targets
 - `lakexpress_suggest_workflow` — Recommend full command sequence
 - `lakexpress_preview_command` — Build and preview any LakeXpress command
 - `lakexpress_execute_command` — Execute command
 - `lakexpress_get_version` — Report version and capabilities
+- `lakexpress_release_notes` — Return release-notes text for a LakeXpress version
 
-### MigratorXpress (6 tools)
+### MigratorXpress (7 tools)
 - `migratorxpress_list_capabilities` — List databases, tasks, and modes
 - `migratorxpress_suggest_workflow` — Recommend migration task sequence
 - `migratorxpress_validate_auth_file` — Validate auth JSON file
 - `migratorxpress_preview_command` — Build and preview migration command
 - `migratorxpress_execute_command` — Execute migration
 - `migratorxpress_get_version` — Report version and capabilities
+- `migratorxpress_release_notes` — Return release-notes text for a MigratorXpress version
 
 ### Meta (3 tools)
 - `arpe_get_status` — Status of all tools (installed/command-builder-only)
