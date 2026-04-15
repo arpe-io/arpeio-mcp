@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.0] - 2026-04-15
+
+### Added
+
+- **FastBCP 0.31 support**: New version entry in the FastBCP capability registry. 0.31 is an internal Parquet schema-precision improvement (`GetSchemaTable` replaces `GetColumnSchema`); capability surface is unchanged from 0.30. Doc-search index now crawls the 0.31 release-notes page.
+- **LakeXpress 0.4 support**: New version entry. Adds **Teradata** as a supported source database (`teradata`) and **Amazon Redshift** as a publish target (`redshift`, with `--publish_method internal|external`). `check_version_compatibility` now warns when these are requested against a pre-0.4 binary.
+- **Per-product release-notes tools**: New `fastbcp_release_notes`, `fasttransfer_release_notes`, `lakexpress_release_notes`, and `migratorxpress_release_notes` tools. Each returns release-notes chunks from the local docs cache, optionally filtered by version (e.g. `version="0.31"`). Tool count rises from 28 to 32.
+- **Shared helper `SearchEngine.get_release_notes`**: Filters indexed chunks by `release-notes` URL path for a given product, with automatic newest-version selection when no version is provided.
+
+### Changed
+
+- **LakeXpress subcommand rename (`logdb` → `lxdb`)**: The 0.4.0 CLI renamed the metadata-database subcommand group. `lakexpress_preview_command` now emits `lxdb init`, `lxdb drop`, `lxdb truncate`, `lxdb locks`, and `lxdb release-locks`. Legacy `logdb_*` `command_type` values are still accepted and transparently route to the new `lxdb_*` builders so existing agent scripts keep working.
+- **LakeXpress auth-id flag rename (`--log_db_auth_id` → `--lxdb_auth_id`)**: All emitted commands use the new flag name regardless of which legacy alias was requested.
+- **`suggest_workflow` and `get_supported_capabilities` (LakeXpress)**: Updated to list Teradata as a source, Redshift as a publish target, and to show `lxdb init` + `--lxdb_auth_id` in all example commands. Marks `run` as legacy in 0.4.0+.
+- **MCP instructions**: New "LakeXpress 0.4.0+ notes" section covering the subcommand rename, the flag rename, Teradata, and Redshift internal vs external publishing. Recommended-workflow section now mentions the `*_release_notes` tools.
+- **`arpe_quick_start` keyword routing**: Adds `teradata` to LakeXpress keywords; updates the LakeXpress workflow text to reference `lxdb_init` and `lxdb_auth_id`.
+
 ## [0.1.4] - 2026-03-30
 
 ### Changed
