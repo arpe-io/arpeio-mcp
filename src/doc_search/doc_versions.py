@@ -7,6 +7,14 @@ FASTTRANSFER_DOC_VERSIONS = ["0.14", "0.15", "0.16"]
 LAKEXPRESS_DOC_VERSIONS = ["0.2", "0.3", "0.4"]
 MIGRATORXPRESS_DOC_VERSIONS = ["0.6.27"]
 
+# Release-notes URL templates ({version} is substituted with e.g. "0.31")
+RELEASE_NOTES_URLS = {
+    "fastbcp": "https://fastbcp-docs.arpe.io/latest/release-notes/release-notes-{version}",
+    "fasttransfer": "https://fasttransfer-docs.arpe.io/latest/release-notes/release-notes-{version}",
+    "lakexpress": "https://lakexpress-docs.arpe.io/latest/release-notes/release-notes-{version}",
+    "migratorxpress": "https://aetperf.github.io/MigratorXpress-Documentation/release-notes-{version}",
+}
+
 DOC_URLS = {
     "fastbcp": "https://fastbcp-docs.arpe.io/{version}/sitemap",
     "fasttransfer": "https://fasttransfer-docs.arpe.io/{version}/sitemap",

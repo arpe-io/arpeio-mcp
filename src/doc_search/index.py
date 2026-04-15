@@ -121,6 +121,53 @@ class SearchEngine:
 
         return [r[1] for r in all_results[:top_k]]
 
+    def get_release_notes(
+        self, product: str, version: Optional[str] = None
+    ) -> List[dict]:
+        """Return cached release-notes chunks for a product, optionally filtered by version.
+
+        Filters the indexed chunks for `product` down to those whose URL path
+        contains "release-notes". If `version` is given, further filters to
+        URLs matching "release-notes-{version}". Returns results in the original
+        crawl order (typically heading order on the page), not by BM25 score.
+
+        Args:
+            product: One of "fastbcp", "fasttransfer", "lakexpress", "migratorxpress".
+            version: Optional version string like "0.31" or "0.4". If None, the
+                most recent version available in the index is used.
+
+        Returns:
+            List of chunk dicts (may be empty if nothing is indexed yet).
+        """
+        if product not in self._indexes:
+            return []
+
+        chunks, _ = self._indexes[product]
+        release_chunks = [
+            c for c in chunks if "release-notes" in c.get("url", "").lower()
+        ]
+        if not release_chunks:
+            return []
+
+        if version:
+            needle = f"release-notes-{version}".lower()
+            filtered = [c for c in release_chunks if needle in c.get("url", "").lower()]
+            return filtered
+
+        # No explicit version: return chunks for the highest version seen
+        def _extract_version(url: str) -> tuple:
+            m = re.search(r"release-notes[-/](\d+(?:\.\d+)+)", url.lower())
+            if not m:
+                return ()
+            return tuple(int(x) for x in m.group(1).split("."))
+
+        versioned = [(_extract_version(c.get("url", "")), c) for c in release_chunks]
+        versioned = [(v, c) for v, c in versioned if v]
+        if not versioned:
+            return release_chunks
+        max_version = max(v for v, _ in versioned)
+        return [c for v, c in versioned if v == max_version]
+
     async def initialize(self, version_info: Optional[Dict] = None) -> None:
         """Initialize all indexes from cache or by crawling.
 

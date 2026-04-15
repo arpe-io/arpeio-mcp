@@ -35,6 +35,7 @@ from src.lakexpress.tools import create_tools as create_lakexpress_tools
 from src.migratorxpress.command_builder import CommandBuilder as MigratorXpressCommandBuilder
 from src.migratorxpress.tools import create_tools as create_migratorxpress_tools
 from src.doc_search import SearchEngine, create_tools as create_doc_search_tools
+from src.base.release_notes_handler import build_release_notes_tool
 
 # Load environment variables
 load_dotenv()
@@ -171,6 +172,25 @@ _doc_tools, _doc_handler = create_doc_search_tools(search_engine)
 all_tools.extend(_doc_tools)
 tool_handlers.append(_doc_handler)
 logger.info(f"DocSearch: {len(_doc_tools)} tools registered")
+
+# Per-product release-notes tools (backed by the same docs cache)
+_release_notes_handlers: dict[str, Any] = {}
+for _product in ("fastbcp", "fasttransfer", "lakexpress", "migratorxpress"):
+    _rn_tool, _rn_handler = build_release_notes_tool(_product, search_engine)
+    all_tools.append(_rn_tool)
+    _release_notes_handlers[_rn_tool.name] = _rn_handler
+logger.info(f"ReleaseNotes: {len(_release_notes_handlers)} tools registered")
+
+
+async def _release_notes_dispatch(name: str, arguments: dict):
+    """Route a call to the matching per-product release-notes handler."""
+    handler = _release_notes_handlers.get(name)
+    if handler is None:
+        return None
+    return await handler(arguments or {})
+
+
+tool_handlers.append(_release_notes_dispatch)
 
 
 @app.list_tools()
