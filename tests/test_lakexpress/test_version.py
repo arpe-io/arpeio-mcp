@@ -225,8 +225,8 @@ class TestVersionDetector:
         detector.detect()
         caps = detector.capabilities
 
-        # Should get the latest known capabilities (0.3.0)
-        assert caps == VERSION_REGISTRY["0.3.0"]
+        # Should get the latest known capabilities
+        assert caps == VERSION_REGISTRY["0.4.0"]
 
     @patch("src.base.version_detector.subprocess.run")
     def test_capabilities_undetected_version(self, mock_run):
@@ -243,7 +243,7 @@ class TestVersionDetector:
         caps = detector.capabilities
 
         # Should fall back to latest known
-        assert caps == VERSION_REGISTRY["0.3.0"]
+        assert caps == VERSION_REGISTRY["0.4.0"]
 
     def test_registry_028_source_completeness(self):
         """Test that 0.2.8 registry has all expected source databases."""

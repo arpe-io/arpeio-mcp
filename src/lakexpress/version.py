@@ -261,6 +261,86 @@ VERSION_REGISTRY: Dict[str, VersionCapabilities] = {
         supports_license=True,
         supports_env_name=True,
     ),
+    "0.4.0": VersionCapabilities(
+        source_databases=frozenset(
+            [
+                "sqlserver",
+                "postgresql",
+                "oracle",
+                "mysql",
+                "mariadb",
+                "saphana",
+                "teradata",
+            ]
+        ),
+        log_databases=frozenset(
+            [
+                "sqlserver",
+                "postgresql",
+                "mysql",
+                "sqlite",
+                "duckdb",
+            ]
+        ),
+        storage_backends=frozenset(
+            [
+                "local",
+                "s3",
+                "s3compatible",
+                "gcs",
+                "azure_adls",
+                "onelake",
+            ]
+        ),
+        publish_targets=frozenset(
+            [
+                "snowflake",
+                "databricks",
+                "fabric",
+                "bigquery",
+                "motherduck",
+                "glue",
+                "ducklake",
+                "redshift",
+            ]
+        ),
+        compression_types=frozenset(
+            [
+                "Zstd",
+                "Snappy",
+                "Gzip",
+                "Lz4",
+                "None",
+            ]
+        ),
+        commands=frozenset(
+            [
+                "lxdb_init",
+                "lxdb_drop",
+                "lxdb_truncate",
+                "lxdb_locks",
+                "lxdb_release_locks",
+                "config_create",
+                "config_delete",
+                "config_list",
+                "sync",
+                "sync_export",
+                "sync_publish",
+                "run",  # legacy in 0.4.0+
+                "status",
+                "cleanup",
+            ]
+        ),
+        supports_no_banner=True,
+        supports_version_flag=True,
+        supports_incremental=True,
+        supports_cleanup=True,
+        supports_quiet_fbcp=True,
+        supports_no_progress=True,
+        supports_resume=True,
+        supports_license=True,
+        supports_env_name=True,
+    ),
 }
 
 
@@ -325,6 +405,24 @@ def check_version_compatibility(
             ver_str = str(detected_version) if detected_version else "unknown"
             warnings.append(
                 f"--env_name requires LakeXpress 0.3.0+, "
+                f"but detected version is {ver_str}"
+            )
+
+    # teradata source requires LakeXpress 0.4.0+
+    if "teradata" in str(params.get("source_db_type", "")).lower():
+        if "teradata" not in capabilities.source_databases:
+            ver_str = str(detected_version) if detected_version else "unknown"
+            warnings.append(
+                f"Teradata source requires LakeXpress 0.4.0+, "
+                f"but detected version is {ver_str}"
+            )
+
+    # redshift publish target requires LakeXpress 0.4.0+
+    if "redshift" in str(params.get("publish_target", "")).lower():
+        if "redshift" not in capabilities.publish_targets:
+            ver_str = str(detected_version) if detected_version else "unknown"
+            warnings.append(
+                f"Redshift publish target requires LakeXpress 0.4.0+, "
                 f"but detected version is {ver_str}"
             )
 

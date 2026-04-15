@@ -4,7 +4,7 @@ Version mappings and URL templates for arpe.io documentation sites.
 
 FASTBCP_DOC_VERSIONS = ["0.28", "0.29", "0.30", "0.31"]
 FASTTRANSFER_DOC_VERSIONS = ["0.14", "0.15", "0.16"]
-LAKEXPRESS_DOC_VERSIONS = ["0.2", "0.3"]
+LAKEXPRESS_DOC_VERSIONS = ["0.2", "0.3", "0.4"]
 MIGRATORXPRESS_DOC_VERSIONS = ["0.6.27"]
 
 DOC_URLS = {

@@ -44,6 +44,7 @@ class SourceDatabaseType(str, Enum):
     MYSQL = "mysql"
     MARIADB = "mariadb"
     SAPHANA = "saphana"
+    TERADATA = "teradata"
 
 
 class LogDatabaseType(str, Enum):
@@ -78,6 +79,7 @@ class PublishTarget(str, Enum):
     MOTHERDUCK = "motherduck"
     GLUE = "glue"
     DUCKLAKE = "ducklake"
+    REDSHIFT = "redshift"
 
 
 class PublishMethod(str, Enum):

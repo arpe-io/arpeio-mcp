@@ -94,7 +94,7 @@ class TestCommandBuilder:
         assert builder._preview_only is True
 
     def test_build_logdb_init(self, command_builder):
-        """Test building logdb init command."""
+        """Legacy logdb_init request routes to the 0.4.0+ lxdb init subcommand."""
         request = LakeXpressRequest(
             command=CommandType.LOGDB_INIT,
             logdb_init={"auth_file": "auth.json", "log_db_auth_id": "export_db"},
@@ -102,13 +102,13 @@ class TestCommandBuilder:
         command = command_builder.build_command(request)
 
         assert command[0] == str(command_builder.binary_path)
-        assert command[1] == "logdb"
+        assert command[1] == "lxdb"
         assert command[2] == "init"
         assert "-a" in command
         idx = command.index("-a")
         assert command[idx + 1] == "auth.json"
-        assert "--log_db_auth_id" in command
-        idx = command.index("--log_db_auth_id")
+        assert "--lxdb_auth_id" in command
+        idx = command.index("--lxdb_auth_id")
         assert command[idx + 1] == "export_db"
 
     def test_build_logdb_drop_with_confirm(self, command_builder):
@@ -123,7 +123,7 @@ class TestCommandBuilder:
         )
         command = command_builder.build_command(request)
 
-        assert command[1] == "logdb"
+        assert command[1] == "lxdb"
         assert command[2] == "drop"
         assert "--confirm" in command
 
@@ -140,7 +140,7 @@ class TestCommandBuilder:
         )
         command = command_builder.build_command(request)
 
-        assert command[1] == "logdb"
+        assert command[1] == "lxdb"
         assert command[2] == "truncate"
         assert "--sync_id" in command
         idx = command.index("--sync_id")
@@ -161,7 +161,7 @@ class TestCommandBuilder:
         )
         command = command_builder.build_command(request)
 
-        assert command[1] == "logdb"
+        assert command[1] == "lxdb"
         assert command[2] == "release-locks"
         assert "--max_age_hours" in command
         idx = command.index("--max_age_hours")
@@ -408,7 +408,7 @@ class TestCommandBuilder:
         idx = command.index("-c")
         assert command[idx + 1] == "config.yaml"
         assert "-a" in command
-        assert "--log_db_auth_id" in command
+        assert "--lxdb_auth_id" in command
 
     def test_build_status(self, command_builder):
         """Test building status command."""
@@ -486,7 +486,7 @@ class TestCommandBuilder:
         display = command_builder.format_command_display(command)
 
         assert "-a auth.json" in display
-        assert "--log_db_auth_id export_db" in display
+        assert "--lxdb_auth_id export_db" in display
         assert " \\\n  " in display
 
     def test_get_version_method(self, command_builder):
@@ -593,12 +593,13 @@ class TestHelperFunctions:
         assert "Compression Types" in caps
         assert "Commands" in caps
 
-        assert len(caps["Source Databases"]) == 6
+        assert len(caps["Source Databases"]) == 7  # 0.4.0 adds Teradata
         assert len(caps["Log Databases"]) == 6
         assert len(caps["Storage Backends"]) == 6
-        assert len(caps["Publishing Targets"]) == 7
+        assert len(caps["Publishing Targets"]) == 8  # 0.4.0 adds Redshift
         assert len(caps["Compression Types"]) == 5
-        assert len(caps["Commands"]) == 19
+        assert any("teradata" in db.lower() for db in caps["Source Databases"])
+        assert any("redshift" in pt.lower() for pt in caps["Publishing Targets"])
 
     def test_get_supported_capabilities_includes_saphana(self):
         """Test that SAP HANA appears in get_supported_capabilities output."""
@@ -614,9 +615,9 @@ class TestHelperFunctions:
         assert workflow["publish_target"] is None
         assert len(workflow["steps"]) >= 3
 
-        # Should have logdb init, config create, sync[export], status
+        # Should have lxdb init (0.4.0+), config create, sync[export], status
         commands = [s["command"] for s in workflow["steps"]]
-        assert "logdb init" in commands
+        assert "lxdb init" in commands
         assert "config create" in commands
 
     def test_suggest_workflow_s3_with_publish(self):

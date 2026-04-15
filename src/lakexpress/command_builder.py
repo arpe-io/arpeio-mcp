@@ -155,7 +155,7 @@ class CommandBuilder(BaseCommandBuilder):
         """Build global option flags shared across most commands."""
         args = []
         args.extend(["-a", params.auth_file])
-        args.extend(["--log_db_auth_id", params.log_db_auth_id])
+        args.extend(["--lxdb_auth_id", params.log_db_auth_id])
         if params.log_level:
             args.extend(["--log_level", params.log_level.value])
         if params.log_dir:
@@ -186,48 +186,24 @@ class CommandBuilder(BaseCommandBuilder):
         return args
 
     def _build_logdb_init(self, params: LogdbInitParams) -> List[str]:
-        """Build logdb init command."""
-        cmd = [str(self.binary_path), "logdb", "init"]
-        cmd.extend(self._build_global_options(params))
-        return cmd
+        """Legacy alias for lxdb init (0.4.0+ renamed the subcommand)."""
+        return self._build_lxdb_init(params)
 
     def _build_logdb_drop(self, params: LogdbDropParams) -> List[str]:
-        """Build logdb drop command."""
-        cmd = [str(self.binary_path), "logdb", "drop"]
-        cmd.extend(self._build_global_options(params))
-        if params.confirm:
-            cmd.append("--confirm")
-        return cmd
+        """Legacy alias for lxdb drop (0.4.0+ renamed the subcommand)."""
+        return self._build_lxdb_drop(params)
 
     def _build_logdb_truncate(self, params: LogdbTruncateParams) -> List[str]:
-        """Build logdb truncate command."""
-        cmd = [str(self.binary_path), "logdb", "truncate"]
-        cmd.extend(self._build_global_options(params))
-        if params.sync_id:
-            cmd.extend(["--sync_id", params.sync_id])
-        if params.confirm:
-            cmd.append("--confirm")
-        return cmd
+        """Legacy alias for lxdb truncate (0.4.0+ renamed the subcommand)."""
+        return self._build_lxdb_truncate(params)
 
     def _build_logdb_locks(self, params: LogdbLocksParams) -> List[str]:
-        """Build logdb locks command."""
-        cmd = [str(self.binary_path), "logdb", "locks"]
-        cmd.extend(self._build_global_options(params))
-        if params.sync_id:
-            cmd.extend(["--sync_id", params.sync_id])
-        return cmd
+        """Legacy alias for lxdb locks (0.4.0+ renamed the subcommand)."""
+        return self._build_lxdb_locks(params)
 
     def _build_logdb_release_locks(self, params: LogdbReleaseLocksParams) -> List[str]:
-        """Build logdb release-locks command."""
-        cmd = [str(self.binary_path), "logdb", "release-locks"]
-        cmd.extend(self._build_global_options(params))
-        if params.max_age_hours is not None:
-            cmd.extend(["--max_age_hours", str(params.max_age_hours)])
-        if params.table_id:
-            cmd.extend(["--table_id", params.table_id])
-        if params.confirm:
-            cmd.append("--confirm")
-        return cmd
+        """Legacy alias for lxdb release-locks (0.4.0+ renamed the subcommand)."""
+        return self._build_lxdb_release_locks(params)
 
     def _build_lxdb_init(self, params: LogdbInitParams) -> List[str]:
         """Build lxdb init command (0.3.0+)."""
@@ -424,7 +400,7 @@ class CommandBuilder(BaseCommandBuilder):
         if params.auth_file:
             cmd.extend(["-a", params.auth_file])
         if params.log_db_auth_id:
-            cmd.extend(["--log_db_auth_id", params.log_db_auth_id])
+            cmd.extend(["--lxdb_auth_id", params.log_db_auth_id])
         cmd.extend(self._build_common_options(params))
         return cmd
 
@@ -470,6 +446,7 @@ def get_supported_capabilities() -> Dict[str, Any]:
             "MySQL (mysql)",
             "MariaDB (mariadb)",
             "SAP HANA (saphana)",
+            "Teradata (teradata, 0.4.0+)",
         ],
         "Log Databases": [
             "SQL Server (sqlserver)",
@@ -495,28 +472,25 @@ def get_supported_capabilities() -> Dict[str, Any]:
             "MotherDuck (motherduck)",
             "AWS Glue (glue)",
             "DuckLake (ducklake)",
+            "Amazon Redshift (redshift, 0.4.0+ - supports internal COPY or external Spectrum)",
         ],
         "Compression Types": ["Zstd", "Snappy", "Gzip", "Lz4", "None"],
         "Commands": {
-            "logdb init": "Create the log database schema (pre-0.3.0)",
-            "logdb drop": "Drop the log database schema (pre-0.3.0)",
-            "logdb truncate": "Clear all data, keep schema (pre-0.3.0)",
-            "logdb locks": "Show currently locked tables (pre-0.3.0)",
-            "logdb release-locks": "Release stale or stuck locks (pre-0.3.0)",
-            "lxdb init": "Create the log database schema (0.3.0+)",
-            "lxdb drop": "Drop the log database schema (0.3.0+)",
-            "lxdb truncate": "Clear all data, keep schema (0.3.0+)",
-            "lxdb locks": "Show currently locked tables (0.3.0+)",
-            "lxdb release-locks": "Release stale or stuck locks (0.3.0+)",
+            "lxdb init": "Create the metadata database schema (0.4.0+; renamed from logdb init)",
+            "lxdb drop": "Drop the metadata database schema",
+            "lxdb truncate": "Clear all data from the metadata database, keep schema",
+            "lxdb locks": "Show currently locked tables",
+            "lxdb release-locks": "Release stale or stuck locks",
             "config create": "Create a new sync configuration",
             "config delete": "Delete an existing sync configuration",
             "config list": "List all sync configurations",
-            "sync": "Execute sync (export + publish)",
-            "sync[export]": "Execute export only",
-            "sync[publish]": "Execute publish only",
-            "run": "Run export from YAML config file",
+            "sync": "Execute full sync (export + publish)",
+            "sync[export]": "Execute export step only",
+            "sync[publish]": "Execute publish step only",
+            "run": "Legacy YAML-driven execution (0.4.0+ prefers config create + sync)",
             "status": "Query sync/run status",
             "cleanup": "Remove orphaned or stale runs",
+            "(legacy aliases)": "logdb_init/drop/truncate/locks/release_locks still accepted and routed to lxdb * (0.4.0+)",
         },
     }
 
@@ -539,14 +513,14 @@ def suggest_workflow(
     """
     steps = []
 
-    # Step 1: Initialize log database (if first time)
+    # Step 1: Initialize metadata database (first-time setup only)
     steps.append(
         {
             "step": 1,
-            "command": "logdb init",
-            "description": "Initialize the log database schema (first-time setup only)",
+            "command": "lxdb init",
+            "description": "Initialize the metadata database schema (first-time setup only; renamed from logdb init in 0.4.0)",
             "example": (
-                "LakeXpress logdb init -a auth.json --log_db_auth_id export_db"
+                "LakeXpress lxdb init -a auth.json --lxdb_auth_id export_db"
             ),
         }
     )
@@ -554,7 +528,7 @@ def suggest_workflow(
     # Step 2: Create sync configuration
     config_desc = f"Create sync configuration for {source_type} source"
     config_example = (
-        "LakeXpress config create -a auth.json --log_db_auth_id export_db "
+        "LakeXpress config create -a auth.json --lxdb_auth_id export_db "
         "--source_db_auth_id source_db"
     )
     if destination == "local":
@@ -614,7 +588,7 @@ def suggest_workflow(
             "step": 4,
             "command": "status",
             "description": "Check the status of the sync run",
-            "example": "LakeXpress status -a auth.json --log_db_auth_id export_db --sync_id <sync_id>",
+            "example": "LakeXpress status -a auth.json --lxdb_auth_id export_db --sync_id <sync_id>",
         }
     )
 

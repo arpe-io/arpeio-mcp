@@ -73,9 +73,9 @@ class TestCommandType:
 class TestSourceDatabaseType:
     """Tests for SourceDatabaseType enum."""
 
-    def test_all_6_source_types(self):
-        """Test that there are exactly 6 source database types."""
-        assert len(SourceDatabaseType) == 6
+    def test_all_7_source_types(self):
+        """0.4.0+ supports 7 source database types (added Teradata)."""
+        assert len(SourceDatabaseType) == 7
 
     def test_source_types_exist(self):
         """Test all source database types exist."""
@@ -85,6 +85,7 @@ class TestSourceDatabaseType:
         assert SourceDatabaseType("mysql") == SourceDatabaseType.MYSQL
         assert SourceDatabaseType("mariadb") == SourceDatabaseType.MARIADB
         assert SourceDatabaseType("saphana") == SourceDatabaseType.SAPHANA
+        assert SourceDatabaseType("teradata") == SourceDatabaseType.TERADATA
 
 
 class TestLogDatabaseType:
@@ -117,9 +118,9 @@ class TestOtherEnums:
         assert StorageBackend("azure_adls") == StorageBackend.AZURE_ADLS
         assert StorageBackend("onelake") == StorageBackend.ONELAKE
 
-    def test_all_7_publish_targets(self):
-        """Test all 7 publish target values exist."""
-        assert len(PublishTarget) == 7
+    def test_all_8_publish_targets(self):
+        """0.4.0+ supports 8 publish targets (added Redshift)."""
+        assert len(PublishTarget) == 8
         assert PublishTarget("snowflake") == PublishTarget.SNOWFLAKE
         assert PublishTarget("databricks") == PublishTarget.DATABRICKS
         assert PublishTarget("fabric") == PublishTarget.FABRIC
@@ -127,6 +128,7 @@ class TestOtherEnums:
         assert PublishTarget("motherduck") == PublishTarget.MOTHERDUCK
         assert PublishTarget("glue") == PublishTarget.GLUE
         assert PublishTarget("ducklake") == PublishTarget.DUCKLAKE
+        assert PublishTarget("redshift") == PublishTarget.REDSHIFT
 
     def test_all_2_publish_methods(self):
         """Test publish method values."""
