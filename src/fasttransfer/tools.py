@@ -41,9 +41,9 @@ def _suggest_next_steps(errors: list) -> list[str]:
         error_fields.update(str(x) for x in error["loc"])
 
     if "type" in error_fields or any("source" in f or "target" in f for f in error_fields):
-        tips.append("Tip: Use `fasttransfer_list_combinations` to see supported source→target database pairs.")
+        tips.append("Tip: Use `fasttransfer_info` with action='combinations' to see supported source→target database pairs.")
     if "method" in error_fields or "distribute_key_column" in error_fields:
-        tips.append("Tip: Use `fasttransfer_suggest_parallelism` to get the optimal parallelism method for your table.")
+        tips.append("Tip: Use `fasttransfer_info` with action='parallelism' to get the optimal parallelism method for your table.")
 
     return tips
 
@@ -74,8 +74,8 @@ def create_tools(
             name="fasttransfer_preview_transfer",
             description=(
                 "Build and preview a FastTransfer database-to-database transfer command WITHOUT executing it. "
-                "Call this after fasttransfer_validate_connection and fasttransfer_suggest_parallelism. "
                 "Shows the exact CLI command with passwords masked. "
+                "If no parallelism method is specified, one is auto-suggested based on the source database type. "
                 "Does not test connectivity or execute the transfer. "
                 "After reviewing, pass the command to fasttransfer_execute_transfer."
             ),
@@ -282,11 +282,11 @@ def create_tools(
             },
         ),
         Tool(
-            name="fasttransfer_validate_connection",
+            name="fasttransfer_info",
             description=(
-                "Check that database connection parameters are complete and well-formed BEFORE building a transfer command. "
-                "Validates parameter presence only — does NOT test actual database connectivity. "
-                "Call this before fasttransfer_preview_transfer for both source and target connections."
+                "Get information about FastTransfer capabilities, parallelism recommendations, "
+                "workflow guidance, or binary version. Use `action` to select what information you need. "
+                "Read-only, does not require database connectivity."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -297,160 +297,43 @@ def create_tools(
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "connection": {
-                        "type": "object",
-                        "properties": {
-                            "type": {
-                                "type": "string",
-                                "description": "Database connection type. Use a SourceConnectionType value when side='source' or a TargetConnectionType value when side='target' (e.g., 'pgsql', 'mssql', 'oraodp', 'mysql').",
-                            },
-                            "server": {
-                                "type": "string",
-                                "description": "Server address in host:port format (e.g., 'localhost:5432') or host\\instance for SQL Server (e.g., 'myserver\\SQLEXPRESS').",
-                            },
-                            "database": {
-                                "type": "string",
-                                "description": "Database or service name to connect to.",
-                            },
-                            "user": {"type": "string", "description": "Database username. Required unless using trusted_auth, connect_string, or dsn."},
-                            "password": {"type": "string", "description": "Database password. Required when user is provided and not using trusted_auth."},
-                            "connect_string": {
-                                "type": "string",
-                                "description": "Full native connection string. Use this instead of server/user/password when the database requires a custom format (e.g., Oracle TNS, complex SQL Server options).",
-                            },
-                            "dsn": {
-                                "type": "string",
-                                "description": "ODBC Data Source Name. Use when connecting via a pre-configured system or user DSN instead of server/user/password.",
-                            },
-                            "provider": {
-                                "type": "string",
-                                "description": "OLE DB provider name. Only needed for OLE DB connection types.",
-                            },
-                            "trusted_auth": {
-                                "type": "boolean",
-                                "description": "Use Windows trusted (integrated) authentication instead of username/password. Only available on Windows with SQL Server.",
-                            },
-                            "file_input": {
-                                "type": "string",
-                                "description": "Absolute path to a data file to use as source input instead of a database table. Only valid for source-side connections.",
-                            },
-                        },
-                        "required": ["type", "database"],
-                    },
-                    "side": {
+                    "action": {
                         "type": "string",
-                        "enum": ["source", "target"],
-                        "description": "Which side of the transfer this connection is for. source = the database to read from. target = the database to write to.",
+                        "enum": ["combinations", "parallelism", "workflow", "version"],
+                        "description": (
+                            "What information to retrieve. "
+                            "combinations: list supported source-to-target database pairs. "
+                            "parallelism: get a recommended parallelism method for a specific table (requires source_type, has_numeric_key, table_size_estimate). "
+                            "workflow: get a step-by-step transfer guide with database-specific tips (requires source_type, target_type). "
+                            "version: report installed binary version and capabilities."
+                        ),
                     },
-                },
-                "required": ["connection", "side"],
-            },
-        ),
-        Tool(
-            name="fasttransfer_list_combinations",
-            description=(
-                "List all supported source-to-target database pairs for FastTransfer. "
-                "Call this when the user asks what databases are supported or to verify a specific source-to-target combination is valid. "
-                "Returns a matrix of supported pairs. Does not require any parameters."
-            ),
-            annotations=ToolAnnotations(
-                readOnlyHint=True,
-                destructiveHint=False,
-                idempotentHint=True,
-                openWorldHint=False,
-            ),
-            inputSchema={"type": "object", "properties": {}},
-        ),
-        Tool(
-            name="fasttransfer_suggest_parallelism",
-            description=(
-                "Get a single recommended parallelism method based on source database type and table characteristics. "
-                "Call this when the user has not specified a parallelism method before building a transfer command. "
-                "Returns one recommended method with rationale. Does NOT execute anything."
-            ),
-            annotations=ToolAnnotations(
-                readOnlyHint=True,
-                destructiveHint=False,
-                idempotentHint=True,
-                openWorldHint=False,
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
                     "source_type": {
                         "type": "string",
                         "enum": [e.value for e in SourceConnectionType],
-                        "description": "Source database type. Must match one of the supported source connection types (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle ODP.NET, 'mysql' for MySQL).",
+                        "description": "Source database type (required for action=parallelism and action=workflow)",
+                    },
+                    "target_type": {
+                        "type": "string",
+                        "enum": [e.value for e in TargetConnectionType],
+                        "description": "Target database type (required for action=workflow)",
                     },
                     "has_numeric_key": {
                         "type": "boolean",
-                        "description": "Whether the table has a numeric primary/unique key column. true = enables RangeId, Ntile, Random methods. false = limits to physical-location methods (Ctid, Rowid, Physloc) or DataDriven.",
+                        "description": "Whether the table has a numeric key column (required for action=parallelism)",
                     },
                     "has_identity_column": {
                         "type": "boolean",
-                        "description": "Whether the table has an identity/auto-increment column. true = RangeId is especially effective due to sequential distribution. false = other methods may be preferred.",
+                        "description": "Whether the table has an identity/auto-increment column (optional, for action=parallelism)",
                         "default": False,
                     },
                     "table_size_estimate": {
                         "type": "string",
                         "enum": ["small", "medium", "large"],
-                        "description": "Estimated table size. small = under 100K rows, parallelism may not help. medium = 100K-10M rows, moderate parallelism recommended. large = over 10M rows, high parallelism degree recommended.",
+                        "description": "Estimated table size (required for action=parallelism). small: <100K rows. medium: 100K-10M. large: >10M.",
                     },
                 },
-                "required": ["source_type", "has_numeric_key", "table_size_estimate"],
-            },
-        ),
-        Tool(
-            name="fasttransfer_get_version",
-            description=(
-                "Report the installed FastTransfer binary version and its supported capabilities "
-                "(database types, parallelism methods, features). "
-                "Call this to check feature availability or diagnose version-related issues. "
-                "Does not require database connectivity."
-            ),
-            annotations=ToolAnnotations(
-                readOnlyHint=True,
-                destructiveHint=False,
-                idempotentHint=True,
-                openWorldHint=False,
-            ),
-            inputSchema={"type": "object", "properties": {}},
-        ),
-        Tool(
-            name="fasttransfer_suggest_workflow",
-            description=(
-                "Get a step-by-step workflow guide for transferring data between databases with FastTransfer, "
-                "including database-specific tips. "
-                "Call this early in the workflow to plan the right sequence of tool calls. "
-                "Does not execute anything."
-            ),
-            annotations=ToolAnnotations(
-                readOnlyHint=True,
-                destructiveHint=False,
-                idempotentHint=True,
-                openWorldHint=False,
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "source_type": {
-                        "type": "string",
-                        "enum": [e.value for e in SourceConnectionType],
-                        "description": "Source database type. Must match one of the supported source connection types (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle ODP.NET, 'mysql' for MySQL).",
-                    },
-                    "target_type": {
-                        "type": "string",
-                        "enum": [e.value for e in TargetConnectionType],
-                        "description": "Target database type. Must match one of the supported target connection types (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle ODP.NET, 'mysql' for MySQL).",
-                    },
-                    "table_size_estimate": {
-                        "type": "string",
-                        "enum": ["small", "medium", "large"],
-                        "description": "Estimated table size to tailor parallelism advice. small = under 100K rows. medium = 100K-10M rows. large = over 10M rows.",
-                        "default": "medium",
-                    },
-                },
-                "required": ["source_type", "target_type"],
+                "required": ["action"],
             },
         ),
     ]
@@ -476,6 +359,30 @@ def create_tools(
         try:
             # Extract os_type before passing to TransferRequest (not part of the model)
             os_type = arguments.pop("os_type", "linux")
+
+            # Auto-suggest parallelism if not specified
+            auto_parallelism_note = None
+            options = arguments.get("options") or {}
+            method = options.get("method", "None")
+            if method == "None":
+                source_type = (arguments.get("source") or {}).get("type", "")
+                if source_type:
+                    suggestion = suggest_parallelism_method(
+                        source_type,
+                        has_numeric_key=False,
+                        has_identity_column=False,
+                        table_size_estimate="medium",
+                    )
+                    suggested_method = suggestion["method"]
+                    if suggested_method != "None":
+                        if "options" not in arguments:
+                            arguments["options"] = {}
+                        arguments["options"]["method"] = suggested_method
+                        arguments["options"].setdefault("degree", 0)
+                        auto_parallelism_note = (
+                            f"**Auto-suggested parallelism**: `{suggested_method}` method with degree=0 (all cores). "
+                            f"Rationale: {suggestion['explanation']}"
+                        )
 
             # Validate and parse request
             request = TransferRequest(**arguments)
@@ -513,6 +420,11 @@ def create_tools(
                 "## What this command will do:",
                 explanation,
             ]
+
+            if auto_parallelism_note:
+                response.append("")
+                response.append(auto_parallelism_note)
+                response.append("To override, re-call with explicit `method` and `degree` in options.")
 
             if version_warnings:
                 response.append("")
@@ -983,6 +895,23 @@ def create_tools(
     # Dispatch
     # ------------------------------------------------------------------ #
 
+    async def handle_info(arguments: Dict[str, Any]) -> list[TextContent]:
+        """Handle fasttransfer_info tool — dispatch based on action parameter."""
+        action = arguments.get("action", "")
+        if action == "combinations":
+            return await handle_list_combinations(arguments)
+        elif action == "parallelism":
+            return await handle_suggest_parallelism(arguments)
+        elif action == "workflow":
+            return await handle_suggest_workflow(arguments)
+        elif action == "version":
+            return await handle_get_version(arguments)
+        else:
+            return [TextContent(
+                type="text",
+                text=f"Unknown action '{action}'. Valid actions: combinations, parallelism, workflow, version.",
+            )]
+
     async def handle_call(name: str, arguments: Dict[str, Any]) -> list[TextContent]:
         """Route a tool call to the appropriate handler."""
         try:
@@ -990,16 +919,8 @@ def create_tools(
                 return await handle_preview_transfer(arguments)
             elif name == "fasttransfer_execute_transfer":
                 return await handle_execute_transfer(arguments)
-            elif name == "fasttransfer_validate_connection":
-                return await handle_validate_connection(arguments)
-            elif name == "fasttransfer_list_combinations":
-                return await handle_list_combinations(arguments)
-            elif name == "fasttransfer_suggest_parallelism":
-                return await handle_suggest_parallelism(arguments)
-            elif name == "fasttransfer_get_version":
-                return await handle_get_version(arguments)
-            elif name == "fasttransfer_suggest_workflow":
-                return await handle_suggest_workflow(arguments)
+            elif name == "fasttransfer_info":
+                return await handle_info(arguments)
             else:
                 return None
         except Exception as e:

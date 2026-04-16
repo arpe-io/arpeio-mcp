@@ -47,11 +47,11 @@ def _suggest_next_steps(errors: list) -> list[str]:
         error_msgs.add(error["msg"].lower())
 
     if "type" in error_fields or any("source" in f for f in error_fields):
-        tips.append("Tip: Use `fastbcp_list_formats` to see supported source database types and output formats.")
+        tips.append("Tip: Use `fastbcp_info` with action='formats' to see supported source database types and output formats.")
     if "method" in error_fields or "distribute_key_column" in error_fields:
-        tips.append("Tip: Use `fastbcp_suggest_parallelism` to get the optimal parallelism method for your table.")
+        tips.append("Tip: Use `fastbcp_info` with action='parallelism' to get the optimal parallelism method for your table.")
     if any("storage" in m or "cloud" in m for m in error_msgs):
-        tips.append("Tip: Use `fastbcp_list_formats` to see supported storage targets.")
+        tips.append("Tip: Use `fastbcp_info` with action='formats' to see supported storage targets.")
 
     return tips
 
@@ -138,8 +138,8 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             name="fastbcp_preview_export",
             description=(
                 "Build and preview a FastBCP export command WITHOUT executing it. "
-                "Call this after fastbcp_validate_connection and fastbcp_suggest_parallelism. "
                 "Shows the exact CLI command with passwords masked. "
+                "If no parallelism method is specified, one is auto-suggested based on the source database type. "
                 "Does NOT test connectivity or execute the export. "
                 "After reviewing, pass the command to fastbcp_execute_export."
             ),
@@ -387,11 +387,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             },
         ),
         Tool(
-            name="fastbcp_validate_connection",
+            name="fastbcp_info",
             description=(
-                "Check that database connection parameters are complete and well-formed BEFORE building an export command. "
-                "Validates parameter presence only — does NOT test actual database connectivity. "
-                "Call this before fastbcp_preview_export to catch parameter issues early."
+                "Get information about FastBCP capabilities, parallelism recommendations, "
+                "workflow guidance, or binary version. Use `action` to select what information you need. "
+                "Read-only, does not require database connectivity."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -402,156 +402,49 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "connection": {
-                        "type": "object",
-                        "properties": {
-                            "type": {
-                                "type": "string",
-                                "description": "Connection type",
-                            },
-                            "server": {
-                                "type": "string",
-                                "description": "Server address",
-                            },
-                            "database": {
-                                "type": "string",
-                                "description": "Database name",
-                            },
-                            "user": {"type": "string", "description": "Username"},
-                            "password": {"type": "string", "description": "Password"},
-                            "connect_string": {
-                                "type": "string",
-                                "description": "Full connection string (alternative to server/user/password)",
-                            },
-                            "dsn": {
-                                "type": "string",
-                                "description": "ODBC DSN name",
-                            },
-                            "provider": {
-                                "type": "string",
-                                "description": "OleDB provider name",
-                            },
-                            "trusted_auth": {
-                                "type": "boolean",
-                                "description": "Use trusted authentication",
-                            },
-                        },
-                        "required": ["type", "database"],
-                    },
-                    "side": {
+                    "action": {
                         "type": "string",
-                        "enum": ["source", "target"],
-                        "description": "Connection side",
+                        "enum": ["formats", "parallelism", "workflow", "version"],
+                        "description": (
+                            "What information to retrieve. "
+                            "formats: list supported source databases, output formats, and storage targets. "
+                            "parallelism: get a recommended parallelism method for a specific table (requires source_type, has_numeric_key, table_size_estimate). "
+                            "workflow: get a step-by-step export guide with database-specific tips (requires source_type, output_format). "
+                            "version: report installed binary version and capabilities."
+                        ),
                     },
-                },
-                "required": ["connection", "side"],
-            },
-        ),
-        Tool(
-            name="fastbcp_list_formats",
-            description=(
-                "List all supported source databases, output formats, and storage targets for FastBCP. "
-                "Call this when the user asks what databases or formats are supported, or to verify a specific combination is valid. "
-                "Returns structured capability information. Does not require any parameters or database connectivity."
-            ),
-            annotations=ToolAnnotations(
-                readOnlyHint=True,
-                destructiveHint=False,
-                idempotentHint=True,
-                openWorldHint=False,
-            ),
-            inputSchema={"type": "object", "properties": {}},
-        ),
-        Tool(
-            name="fastbcp_suggest_parallelism",
-            description=(
-                "Get a single recommended parallelism method based on source database type and table characteristics. "
-                "Call this when the user has not specified a parallelism method before building an export command. "
-                "Returns one recommended method with rationale. Does NOT execute anything."
-            ),
-            annotations=ToolAnnotations(
-                readOnlyHint=True,
-                destructiveHint=False,
-                idempotentHint=True,
-                openWorldHint=False,
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
                     "source_type": {
                         "type": "string",
                         "enum": [e.value for e in SourceConnectionType],
-                        "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle)",
+                        "description": "Source database type (required for action=parallelism and action=workflow)",
                     },
                     "has_numeric_key": {
                         "type": "boolean",
-                        "description": "Whether the table has a numeric key column (integer primary key or identity column). Determines whether Ntile/RangeId methods can be used.",
+                        "description": "Whether the table has a numeric key column (required for action=parallelism)",
                     },
                     "has_identity_column": {
                         "type": "boolean",
-                        "description": "Whether the table has an identity/auto-increment column. If true, RangeId is a strong candidate for SQL Server.",
+                        "description": "Whether the table has an identity/auto-increment column (optional, for action=parallelism)",
                         "default": False,
                     },
                     "table_size_estimate": {
                         "type": "string",
                         "enum": ["small", "medium", "large"],
-                        "description": "Estimated table size. small: < 100K rows (parallelism may not help). medium: 100K-10M rows. large: > 10M rows (parallelism strongly recommended).",
-                    },
-                },
-                "required": ["source_type", "has_numeric_key", "table_size_estimate"],
-            },
-        ),
-        Tool(
-            name="fastbcp_get_version",
-            description=(
-                "Report the installed FastBCP binary version and its supported capabilities "
-                "(database types, output formats, parallelism methods, storage targets). "
-                "Call this to check feature availability or diagnose version-related issues. "
-                "Does not require database connectivity."
-            ),
-            annotations=ToolAnnotations(
-                readOnlyHint=True,
-                destructiveHint=False,
-                idempotentHint=True,
-                openWorldHint=False,
-            ),
-            inputSchema={"type": "object", "properties": {}},
-        ),
-        Tool(
-            name="fastbcp_suggest_workflow",
-            description=(
-                "Get a step-by-step workflow guide for exporting data with FastBCP, "
-                "including database-specific tips and recommended parallelism methods. "
-                "Call this early to plan the right sequence of tool calls. "
-                "Does not execute anything or require database connectivity."
-            ),
-            annotations=ToolAnnotations(
-                readOnlyHint=True,
-                destructiveHint=False,
-                idempotentHint=True,
-                openWorldHint=False,
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "source_type": {
-                        "type": "string",
-                        "enum": [e.value for e in SourceConnectionType],
-                        "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle)",
+                        "description": "Estimated table size (required for action=parallelism). small: <100K rows. medium: 100K-10M. large: >10M.",
                     },
                     "output_format": {
                         "type": "string",
                         "enum": [e.value for e in OutputFormat],
-                        "description": "Desired output format. parquet: columnar, compressed, ideal for analytics. csv/tsv: delimited text. json: JSONL format. bson: binary JSON. xlsx: Excel.",
+                        "description": "Desired output format (required for action=workflow)",
                     },
                     "storage_target": {
                         "type": "string",
                         "enum": [e.value for e in StorageTarget],
-                        "description": "Where to write output files. local: local filesystem. s3/s3compatible: Amazon S3. azure_blob/azure_datalake: Azure. gcs: Google Cloud Storage. fabric_onelake: Microsoft Fabric.",
+                        "description": "Storage target (optional, for action=workflow, default: local)",
                         "default": "local",
                     },
                 },
-                "required": ["source_type", "output_format"],
+                "required": ["action"],
             },
         ),
     ]
@@ -578,6 +471,30 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
 
             # Extract config_file before passing to ExportRequest (not part of the model)
             config_file = arguments.pop("config_file", None)
+
+            # Auto-suggest parallelism if not specified
+            auto_parallelism_note = None
+            options = arguments.get("options") or {}
+            method = options.get("method", "None")
+            if method == "None" and options.get("degree", 1) == 1:
+                source_type = (arguments.get("source") or {}).get("type", "")
+                if source_type:
+                    suggestion = suggest_parallelism_method(
+                        source_type,
+                        has_numeric_key=False,
+                        has_identity_column=False,
+                        table_size_estimate="medium",
+                    )
+                    suggested_method = suggestion["method"]
+                    if suggested_method != "None":
+                        if "options" not in arguments:
+                            arguments["options"] = {}
+                        arguments["options"]["method"] = suggested_method
+                        arguments["options"].setdefault("degree", 0)
+                        auto_parallelism_note = (
+                            f"**Auto-suggested parallelism**: `{suggested_method}` method with degree=0 (all cores). "
+                            f"Rationale: {suggestion['explanation']}"
+                        )
 
             # Validate and parse request
             request = ExportRequest(**arguments)
@@ -616,6 +533,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "## What this command will do:",
                 explanation,
             ]
+
+            if auto_parallelism_note:
+                response.append("")
+                response.append(auto_parallelism_note)
+                response.append("To override, re-call with explicit `method` and `degree` in options.")
 
             if version_warnings:
                 response.append("")
@@ -1107,6 +1029,23 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
 
     # --- Dispatcher ---
 
+    async def handle_info(arguments: Dict[str, Any]) -> list[TextContent]:
+        """Handle fastbcp_info tool — dispatch based on action parameter."""
+        action = arguments.get("action", "")
+        if action == "formats":
+            return await handle_list_formats(arguments)
+        elif action == "parallelism":
+            return await handle_suggest_parallelism(arguments)
+        elif action == "workflow":
+            return await handle_suggest_workflow(arguments)
+        elif action == "version":
+            return await handle_get_version(arguments)
+        else:
+            return [TextContent(
+                type="text",
+                text=f"Unknown action '{action}'. Valid actions: formats, parallelism, workflow, version.",
+            )]
+
     async def handle_call(name: str, arguments: Dict[str, Any]):
         """Route tool calls to the appropriate handler.
 
@@ -1121,16 +1060,8 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             return await handle_preview_export(arguments)
         elif name == "fastbcp_execute_export":
             return await handle_execute_export(arguments)
-        elif name == "fastbcp_validate_connection":
-            return await handle_validate_connection(arguments)
-        elif name == "fastbcp_list_formats":
-            return await handle_list_formats(arguments)
-        elif name == "fastbcp_suggest_parallelism":
-            return await handle_suggest_parallelism(arguments)
-        elif name == "fastbcp_get_version":
-            return await handle_get_version(arguments)
-        elif name == "fastbcp_suggest_workflow":
-            return await handle_suggest_workflow(arguments)
+        elif name == "fastbcp_info":
+            return await handle_info(arguments)
         return None  # not our tool
 
     return tools, handle_call

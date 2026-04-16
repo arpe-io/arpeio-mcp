@@ -47,9 +47,9 @@ def _suggest_next_steps(errors: list) -> list[str]:
     if "auth_file" in error_fields or "source_db_auth_id" in error_fields or "target_db_auth_id" in error_fields:
         tips.append("Tip: Use `migratorxpress_validate_auth_file` to verify your credentials file is valid.")
     if "task_list" in error_fields:
-        tips.append("Tip: Use `migratorxpress_suggest_workflow` to get the recommended task sequence for your migration.")
+        tips.append("Tip: Use `migratorxpress_info` with action='workflow' to get the recommended task sequence for your migration.")
     if any("source" in f or "target" in f for f in error_fields):
-        tips.append("Tip: Use `migratorxpress_list_capabilities` to see supported source and target databases.")
+        tips.append("Tip: Use `migratorxpress_info` with action='capabilities' to see supported source and target databases.")
 
     return tips
 
@@ -132,7 +132,6 @@ def create_tools(
             name="migratorxpress_preview_command",
             description=(
                 "Build and preview a MigratorXpress migration command WITHOUT executing it. "
-                "Call this after migratorxpress_validate_auth_file and migratorxpress_suggest_workflow. "
                 "Shows the exact CLI command with passwords masked. "
                 "Does NOT execute the migration or validate database connectivity. "
                 "After reviewing, pass the command to migratorxpress_execute_command."
@@ -402,28 +401,11 @@ def create_tools(
             },
         ),
         Tool(
-            name="migratorxpress_list_capabilities",
+            name="migratorxpress_info",
             description=(
-                "List all supported source and target database platforms, migration tasks, "
-                "and modes for MigratorXpress. Call this when the user asks what databases or "
-                "migration paths are supported. Returns structured capability information. "
-                "Does not require any parameters."
-            ),
-            annotations=ToolAnnotations(
-                readOnlyHint=True,
-                destructiveHint=False,
-                idempotentHint=True,
-                openWorldHint=False,
-            ),
-            inputSchema={"type": "object", "properties": {}},
-        ),
-        Tool(
-            name="migratorxpress_suggest_workflow",
-            description=(
-                "Get the recommended task sequence for a cross-platform database migration "
-                "(e.g., Oracle -> PostgreSQL). Call this FIRST to understand which tasks to run "
-                "and in what order (translate -> create -> transfer -> copy_pk -> copy_ak -> copy_fk). "
-                "Does not execute anything."
+                "Get information about MigratorXpress capabilities, workflow guidance, "
+                "or binary version. Use `action` to select what information you need. "
+                "Read-only, does not require database connectivity."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -434,39 +416,34 @@ def create_tools(
             inputSchema={
                 "type": "object",
                 "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["capabilities", "workflow", "version"],
+                        "description": (
+                            "What information to retrieve. "
+                            "capabilities: list supported source/target databases, tasks, and modes. "
+                            "workflow: get the recommended task sequence for a migration (requires source_type, target_type). "
+                            "version: report installed binary version and capabilities."
+                        ),
+                    },
                     "source_type": {
                         "type": "string",
                         "enum": [e.value for e in SourceDatabaseType],
-                        "description": "Source database platform to migrate from",
+                        "description": "Source database platform (required for action=workflow)",
                     },
                     "target_type": {
                         "type": "string",
                         "enum": [e.value for e in TargetDatabaseType],
-                        "description": "Target database platform to migrate to",
+                        "description": "Target database platform (required for action=workflow)",
                     },
                     "include_constraints": {
                         "type": "boolean",
                         "default": True,
-                        "description": "Whether to include constraint copy steps (copy_pk, copy_ak, copy_fk) in the suggested workflow. Set to false for data-only migrations.",
+                        "description": "Include constraint copy steps in workflow (optional, for action=workflow)",
                     },
                 },
-                "required": ["source_type", "target_type"],
+                "required": ["action"],
             },
-        ),
-        Tool(
-            name="migratorxpress_get_version",
-            description=(
-                "Report the installed MigratorXpress binary version and its supported capabilities. "
-                "Call this to check feature availability or diagnose version-related issues. "
-                "Does not require database connectivity."
-            ),
-            annotations=ToolAnnotations(
-                readOnlyHint=True,
-                destructiveHint=False,
-                idempotentHint=True,
-                openWorldHint=False,
-            ),
-            inputSchema={"type": "object", "properties": {}},
         ),
     ]
 
@@ -919,6 +896,21 @@ def create_tools(
 
     # --- Dispatch ---
 
+    async def handle_info(arguments: Dict[str, Any]) -> list[TextContent]:
+        """Handle migratorxpress_info tool — dispatch based on action parameter."""
+        action = arguments.get("action", "")
+        if action == "capabilities":
+            return await handle_list_capabilities(arguments)
+        elif action == "workflow":
+            return await handle_suggest_workflow(arguments)
+        elif action == "version":
+            return await handle_get_version(arguments)
+        else:
+            return [TextContent(
+                type="text",
+                text=f"Unknown action '{action}'. Valid actions: capabilities, workflow, version.",
+            )]
+
     async def handle_call(name: str, arguments: Dict[str, Any]):
         if name == "migratorxpress_preview_command":
             return await handle_preview_command(arguments)
@@ -926,12 +918,8 @@ def create_tools(
             return await handle_execute_command(arguments)
         elif name == "migratorxpress_validate_auth_file":
             return await handle_validate_auth_file(arguments)
-        elif name == "migratorxpress_list_capabilities":
-            return await handle_list_capabilities(arguments)
-        elif name == "migratorxpress_suggest_workflow":
-            return await handle_suggest_workflow(arguments)
-        elif name == "migratorxpress_get_version":
-            return await handle_get_version(arguments)
+        elif name == "migratorxpress_info":
+            return await handle_info(arguments)
         return None
 
     return tools, handle_call

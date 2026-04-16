@@ -48,9 +48,9 @@ def _suggest_next_steps(errors: list) -> list[str]:
         error_fields.update(str(x) for x in error["loc"])
 
     if "command" in error_fields:
-        tips.append("Tip: Use `lakexpress_list_capabilities` to see supported commands.")
+        tips.append("Tip: Use `lakexpress_info` with action='capabilities' to see supported commands.")
     if "auth_file" in error_fields or "log_db_auth_id" in error_fields:
-        tips.append("Tip: Use `lakexpress_suggest_workflow` to see the required parameters for each command.")
+        tips.append("Tip: Use `lakexpress_info` with action='workflow' to see the required parameters for each command.")
 
     return tips
 
@@ -1081,30 +1081,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             },
         ),
         Tool(
-            name="lakexpress_list_capabilities",
+            name="lakexpress_info",
             description=(
-                "List all supported source databases, log databases, storage backends, "
-                "and publish targets for LakeXpress. "
-                "Call this when the user asks what databases or cloud targets are supported. "
-                "Returns structured capability information. "
-                "Does not require any parameters or database connectivity."
-            ),
-            annotations=ToolAnnotations(
-                readOnlyHint=True,
-                destructiveHint=False,
-                idempotentHint=True,
-                openWorldHint=False,
-            ),
-            inputSchema={"type": "object", "properties": {}},
-        ),
-        Tool(
-            name="lakexpress_suggest_workflow",
-            description=(
-                "Get the recommended sequence of LakeXpress commands for a specific use case "
-                "(e.g., sync Oracle to Snowflake). "
-                "Call this FIRST before building any commands -- LakeXpress requires multiple commands "
-                "in a specific order (logdb_init -> config_create -> sync/run). "
-                "Does not execute anything."
+                "Get information about LakeXpress capabilities, workflow guidance, "
+                "or binary version. Use `action` to select what information you need. "
+                "Read-only, does not require database connectivity."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -1115,39 +1096,34 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             inputSchema={
                 "type": "object",
                 "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["capabilities", "workflow", "version"],
+                        "description": (
+                            "What information to retrieve. "
+                            "capabilities: list supported source databases, log databases, storage backends, and publish targets. "
+                            "workflow: get the recommended command sequence for a specific use case (requires source_type, destination). "
+                            "version: report installed binary version and capabilities."
+                        ),
+                    },
                     "source_type": {
                         "type": "string",
                         "enum": [e.value for e in SourceDatabaseType],
-                        "description": "Source database type to sync from. Use lakexpress_list_capabilities if unsure which types are supported.",
+                        "description": "Source database type (required for action=workflow)",
                     },
                     "destination": {
                         "type": "string",
                         "enum": [e.value for e in StorageBackend],
-                        "description": "Storage backend where exported data will land. Use 'local' for filesystem, or a cloud option for remote storage.",
+                        "description": "Storage backend (required for action=workflow)",
                     },
                     "publish_target": {
                         "type": "string",
                         "enum": [e.value for e in PublishTarget],
-                        "description": "Optional data warehouse or lakehouse to publish into after export. Omit if you only need file-level export without publishing.",
+                        "description": "Optional publish target (for action=workflow)",
                     },
                 },
-                "required": ["source_type", "destination"],
+                "required": ["action"],
             },
-        ),
-        Tool(
-            name="lakexpress_get_version",
-            description=(
-                "Report the installed LakeXpress binary version and its supported capabilities. "
-                "Call this to check feature availability or diagnose version-related issues. "
-                "Does not require database connectivity."
-            ),
-            annotations=ToolAnnotations(
-                readOnlyHint=True,
-                destructiveHint=False,
-                idempotentHint=True,
-                openWorldHint=False,
-            ),
-            inputSchema={"type": "object", "properties": {}},
         ),
     ]
 
@@ -1522,18 +1498,29 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
 
     # --- Dispatch function ---
 
+    async def handle_info(arguments: Dict[str, Any]) -> list[TextContent]:
+        """Handle lakexpress_info tool — dispatch based on action parameter."""
+        action = arguments.get("action", "")
+        if action == "capabilities":
+            return await handle_list_capabilities(arguments)
+        elif action == "workflow":
+            return await handle_suggest_workflow(arguments)
+        elif action == "version":
+            return await handle_get_version(arguments)
+        else:
+            return [TextContent(
+                type="text",
+                text=f"Unknown action '{action}'. Valid actions: capabilities, workflow, version.",
+            )]
+
     async def handle_call(name: str, arguments: Any) -> Optional[list[TextContent]]:
         """Route tool calls to the appropriate handler."""
         if name == "lakexpress_preview_command":
             return await handle_preview_command(arguments)
         elif name == "lakexpress_execute_command":
             return await handle_execute_command(arguments)
-        elif name == "lakexpress_list_capabilities":
-            return await handle_list_capabilities(arguments)
-        elif name == "lakexpress_suggest_workflow":
-            return await handle_suggest_workflow(arguments)
-        elif name == "lakexpress_get_version":
-            return await handle_get_version(arguments)
+        elif name == "lakexpress_info":
+            return await handle_info(arguments)
         return None
 
     return tools, handle_call

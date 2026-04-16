@@ -25,7 +25,7 @@ Important relationships:
 - LakeXpress uses FastBCP internally for extraction — do NOT suggest both for the same task.
 - MigratorXpress uses FastTransfer internally for data movement — do NOT suggest both for the same task.
 - When the user's intent is unclear, call `arpe_quick_start` with a description of their use case.
-- When the user asks "what changed in version X", call the product-specific `*_release_notes` tool (e.g. `fastbcp_release_notes`, `lakexpress_release_notes`) instead of guessing.
+- When the user asks "what changed in version X", call `arpe_release_notes` with the product name instead of guessing.
 
 ## Parallelism Methods
 
@@ -50,7 +50,7 @@ Default recommendations:
 - SQL Server, no key → **PhysLoc**
 - PostgreSQL, no key → **Ctid**
 - Oracle, no key → **Rowid**
-- When unsure, call `suggest_parallelism` for the relevant tool.
+- When unsure, call `{product}_info` with action='parallelism' for FastBCP/FastTransfer.
 
 ## --paralleldegree Convention
 
@@ -102,13 +102,12 @@ to build the correct command.
 
 Always follow this sequence when building a command:
 
-1. **Validate connection** — call `validate_connection` to check parameters \
-before anything else if the connection has not been tested yet.
-2. **Suggest parallelism** — call `suggest_parallelism` (or `suggest_workflow` \
-for LakeXpress) if the user has not specified a parallelism method.
-3. **Preview** — call the `preview_*` tool to build and review the exact CLI \
-command with passwords masked. Never skip this step.
-4. **Execute** — only after the user has reviewed the preview, call the \
+1. **Get guidance** (optional) — call `{product}_info` with action='workflow' \
+to get database-specific tips and the recommended command sequence.
+2. **Preview** — call the `preview_*` tool to build and review the exact CLI \
+command with passwords masked. If no parallelism method is specified, one is \
+auto-suggested based on the source database type. Never skip this step.
+3. **Execute** — only after the user has reviewed the preview, call the \
 `execute_*` tool with `confirmation=true`.
 
 If the user's intent is unclear or they are new to arpe.io tools, start with \

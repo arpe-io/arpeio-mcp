@@ -19,7 +19,11 @@ from typing import Any
 try:
     from dotenv import load_dotenv
     from mcp.server import Server
-    from mcp.types import Tool, ToolAnnotations, TextContent
+    from mcp.types import (
+        Tool, ToolAnnotations, TextContent,
+        Prompt, PromptArgument, PromptMessage, GetPromptResult,
+        Resource, TextResourceContents,
+    )
 except ImportError as e:
     print(f"Error: Required package not found: {e}", file=sys.stderr)
     print("Please run: pip install arpeio-mcp", file=sys.stderr)
@@ -173,25 +177,267 @@ all_tools.extend(_doc_tools)
 tool_handlers.append(_doc_handler)
 logger.info(f"DocSearch: {len(_doc_tools)} tools registered")
 
-# Per-product release-notes tools (backed by the same docs cache)
-_release_notes_handlers: dict[str, Any] = {}
+# Unified release-notes tool (replaces 4 per-product tools)
+_rn_product_handlers: dict[str, Any] = {}
 for _product in ("fastbcp", "fasttransfer", "lakexpress", "migratorxpress"):
-    _rn_tool, _rn_handler = build_release_notes_tool(_product, search_engine)
-    all_tools.append(_rn_tool)
-    _release_notes_handlers[_rn_tool.name] = _rn_handler
-logger.info(f"ReleaseNotes: {len(_release_notes_handlers)} tools registered")
+    _, _rn_handler = build_release_notes_tool(_product, search_engine)
+    _rn_product_handlers[_product] = _rn_handler
+
+all_tools.append(
+    Tool(
+        name="arpe_release_notes",
+        description=(
+            "Return release-notes chunks for any Arpe.io product. "
+            "Pass `product` to select which tool and optionally `version` to filter "
+            "to a specific release. Read-only; queries the local docs cache."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "product": {
+                    "type": "string",
+                    "enum": ["fastbcp", "fasttransfer", "lakexpress", "migratorxpress"],
+                    "description": "Which product's release notes to retrieve.",
+                },
+                "version": {
+                    "type": "string",
+                    "description": "Optional version string (e.g. '0.31', '0.4'). Omit for the newest indexed version.",
+                },
+            },
+            "required": ["product"],
+        },
+    )
+)
+logger.info("ReleaseNotes: 1 unified tool registered")
 
 
 async def _release_notes_dispatch(name: str, arguments: dict):
-    """Route a call to the matching per-product release-notes handler."""
-    handler = _release_notes_handlers.get(name)
-    if handler is None:
+    """Route arpe_release_notes to the matching per-product handler."""
+    if name != "arpe_release_notes":
         return None
+    product = (arguments or {}).get("product", "")
+    handler = _rn_product_handlers.get(product)
+    if handler is None:
+        return [TextContent(
+            type="text",
+            text=f"Unknown product '{product}'. Valid: fastbcp, fasttransfer, lakexpress, migratorxpress.",
+        )]
     return await handler(arguments or {})
 
 
 tool_handlers.append(_release_notes_dispatch)
 
+
+# ------------------------------------------------------------------ #
+# MCP Prompts — guided workflow starters
+# ------------------------------------------------------------------ #
+
+_PROMPTS = [
+    Prompt(
+        name="export-table",
+        description="Export a database table to a file (CSV, Parquet, JSON, etc.) using FastBCP",
+        arguments=[
+            PromptArgument(name="source_type", description="Source database type (e.g. pgsql, mssql, oraodp, mysql)", required=True),
+            PromptArgument(name="output_format", description="Output format (e.g. parquet, csv, json)", required=True),
+        ],
+    ),
+    Prompt(
+        name="transfer-data",
+        description="Transfer data between two databases using FastTransfer",
+        arguments=[
+            PromptArgument(name="source_type", description="Source database type (e.g. pgsql, mssql, oraodp)", required=True),
+            PromptArgument(name="target_type", description="Target database type (e.g. pgsql, mssql, mysql)", required=True),
+        ],
+    ),
+    Prompt(
+        name="lakehouse-pipeline",
+        description="Set up a database-to-cloud lakehouse pipeline using LakeXpress",
+        arguments=[
+            PromptArgument(name="source_type", description="Source database type (e.g. pgsql, mssql, oraodp)", required=True),
+            PromptArgument(name="publish_target", description="Cloud target (e.g. snowflake, databricks, fabric, bigquery, redshift)", required=True),
+        ],
+    ),
+    Prompt(
+        name="migrate-database",
+        description="Migrate schema and data across database platforms using MigratorXpress",
+        arguments=[
+            PromptArgument(name="source_type", description="Source database (e.g. oracle, postgresql, sqlserver)", required=True),
+            PromptArgument(name="target_type", description="Target database (e.g. postgresql, mysql, sqlserver)", required=True),
+        ],
+    ),
+    Prompt(
+        name="troubleshoot",
+        description="Troubleshoot a failed Arpe.io command using docs search and error diagnostics",
+        arguments=[
+            PromptArgument(name="error_message", description="The error message or output from the failed command", required=True),
+        ],
+    ),
+]
+
+
+@app.list_prompts()
+async def list_prompts() -> list[Prompt]:
+    return _PROMPTS
+
+
+@app.get_prompt()
+async def get_prompt(name: str, arguments: dict | None = None) -> GetPromptResult:
+    args = arguments or {}
+    if name == "export-table":
+        return GetPromptResult(
+            description="Export a database table to a file",
+            messages=[PromptMessage(
+                role="user",
+                content=TextContent(
+                    type="text",
+                    text=(
+                        f"I want to export data from a {args.get('source_type', 'database')} table "
+                        f"to {args.get('output_format', 'a file')} format using FastBCP. "
+                        "Please guide me through the process step by step. "
+                        "Start by getting the workflow guidance, then help me build and preview the export command."
+                    ),
+                ),
+            )],
+        )
+    elif name == "transfer-data":
+        return GetPromptResult(
+            description="Transfer data between databases",
+            messages=[PromptMessage(
+                role="user",
+                content=TextContent(
+                    type="text",
+                    text=(
+                        f"I want to transfer data from a {args.get('source_type', 'source')} database "
+                        f"to a {args.get('target_type', 'target')} database using FastTransfer. "
+                        "Please guide me through the process step by step."
+                    ),
+                ),
+            )],
+        )
+    elif name == "lakehouse-pipeline":
+        return GetPromptResult(
+            description="Set up a lakehouse pipeline",
+            messages=[PromptMessage(
+                role="user",
+                content=TextContent(
+                    type="text",
+                    text=(
+                        f"I want to set up a data pipeline from a {args.get('source_type', 'database')} "
+                        f"to {args.get('publish_target', 'a cloud lakehouse')} using LakeXpress. "
+                        "Please guide me through the full setup: auth file, lxdb init, config create, and sync."
+                    ),
+                ),
+            )],
+        )
+    elif name == "migrate-database":
+        return GetPromptResult(
+            description="Migrate database schema and data",
+            messages=[PromptMessage(
+                role="user",
+                content=TextContent(
+                    type="text",
+                    text=(
+                        f"I want to migrate schema and data from {args.get('source_type', 'a source database')} "
+                        f"to {args.get('target_type', 'a target database')} using MigratorXpress. "
+                        "Please guide me through the complete migration workflow."
+                    ),
+                ),
+            )],
+        )
+    elif name == "troubleshoot":
+        return GetPromptResult(
+            description="Troubleshoot a failed command",
+            messages=[PromptMessage(
+                role="user",
+                content=TextContent(
+                    type="text",
+                    text=(
+                        "I ran an Arpe.io command and it failed with this error:\n\n"
+                        f"```\n{args.get('error_message', '(no error provided)')}\n```\n\n"
+                        "Please search the documentation and help me diagnose what went wrong."
+                    ),
+                ),
+            )],
+        )
+    else:
+        raise ValueError(f"Unknown prompt: {name}")
+
+
+# ------------------------------------------------------------------ #
+# MCP Resources — static capability data
+# ------------------------------------------------------------------ #
+
+from src.fastbcp.command_builder import get_supported_formats as get_fastbcp_formats
+from src.fasttransfer.command_builder import get_supported_combinations as get_fasttransfer_combinations
+from src.lakexpress.command_builder import get_supported_capabilities as get_lakexpress_capabilities
+from src.migratorxpress.command_builder import get_supported_capabilities as get_migratorxpress_capabilities
+
+_RESOURCE_BASE = "arpeio://capabilities"
+
+_RESOURCES = [
+    Resource(
+        uri=f"{_RESOURCE_BASE}/fastbcp-formats",
+        name="FastBCP Supported Formats",
+        description="Supported source databases, output formats, and storage targets for FastBCP",
+        mimeType="application/json",
+    ),
+    Resource(
+        uri=f"{_RESOURCE_BASE}/fasttransfer-combinations",
+        name="FastTransfer Supported Combinations",
+        description="Supported source-to-target database pairs for FastTransfer",
+        mimeType="application/json",
+    ),
+    Resource(
+        uri=f"{_RESOURCE_BASE}/lakexpress-capabilities",
+        name="LakeXpress Capabilities",
+        description="Supported source databases, storage backends, and publish targets for LakeXpress",
+        mimeType="application/json",
+    ),
+    Resource(
+        uri=f"{_RESOURCE_BASE}/migratorxpress-capabilities",
+        name="MigratorXpress Capabilities",
+        description="Supported source/target databases, tasks, and modes for MigratorXpress",
+        mimeType="application/json",
+    ),
+]
+
+
+@app.list_resources()
+async def list_resources() -> list[Resource]:
+    return _RESOURCES
+
+
+@app.read_resource()
+async def read_resource(uri: str) -> list[TextResourceContents]:
+    import json as _json
+
+    if uri == f"{_RESOURCE_BASE}/fastbcp-formats":
+        data = get_fastbcp_formats()
+    elif uri == f"{_RESOURCE_BASE}/fasttransfer-combinations":
+        data = get_fasttransfer_combinations()
+    elif uri == f"{_RESOURCE_BASE}/lakexpress-capabilities":
+        data = get_lakexpress_capabilities()
+    elif uri == f"{_RESOURCE_BASE}/migratorxpress-capabilities":
+        data = get_migratorxpress_capabilities()
+    else:
+        raise ValueError(f"Unknown resource: {uri}")
+
+    return [TextResourceContents(
+        uri=uri,
+        mimeType="application/json",
+        text=_json.dumps(data, indent=2, default=str),
+    )]
+
+
+# ------------------------------------------------------------------ #
+# Tool listing and dispatch
+# ------------------------------------------------------------------ #
 
 @app.list_tools()
 async def list_tools() -> list[Tool]:
@@ -276,10 +522,9 @@ async def handle_arpe_quick_start(arguments: dict) -> list[TextContent]:
             "warning": None,
             "params": "source (type, server, database, table/query, credentials), output (format, path/directory), options (method, degree)",
             "steps": [
-                "1. `fastbcp_validate_connection` — verify your connection parameters",
-                "2. `fastbcp_suggest_parallelism` — get the optimal parallelism method",
-                "3. `fastbcp_preview_export` — build and review the export command",
-                "4. `fastbcp_execute_export` — run the export command",
+                "1. `fastbcp_info` (action='workflow') — get database-specific export guidance",
+                "2. `fastbcp_preview_export` — build and review the export command (parallelism auto-suggested if not specified)",
+                "3. `fastbcp_execute_export` — run the export command",
             ],
         },
         "fasttransfer": {
@@ -289,10 +534,9 @@ async def handle_arpe_quick_start(arguments: dict) -> list[TextContent]:
             "warning": None,
             "params": "source (type, server, database, table/query, credentials), target (type, server, database, table, credentials), options (method, degree)",
             "steps": [
-                "1. `fasttransfer_validate_connection` — verify source and target connections",
-                "2. `fasttransfer_suggest_parallelism` — get the optimal parallelism method",
-                "3. `fasttransfer_preview_transfer` — build and review the transfer command",
-                "4. `fasttransfer_execute_transfer` — run the transfer command",
+                "1. `fasttransfer_info` (action='workflow') — get database-specific transfer guidance",
+                "2. `fasttransfer_preview_transfer` — build and review the transfer command (parallelism auto-suggested if not specified)",
+                "3. `fasttransfer_execute_transfer` — run the transfer command",
             ],
         },
         "lakexpress": {
@@ -302,7 +546,7 @@ async def handle_arpe_quick_start(arguments: dict) -> list[TextContent]:
             "warning": "LakeXpress uses FastBCP internally for extraction — do NOT also use FastBCP for the same task.",
             "params": "auth_file (JSON credentials), lxdb_auth_id, source config, storage backend, publish target",
             "steps": [
-                "1. `lakexpress_suggest_workflow` — get the full command sequence",
+                "1. `lakexpress_info` (action='workflow') — get the full command sequence",
                 "2. `lakexpress_preview_command` — build each command (lxdb_init, config_create, sync / sync_export / sync_publish)",
                 "3. `lakexpress_execute_command` — run each command in sequence",
             ],
@@ -314,8 +558,8 @@ async def handle_arpe_quick_start(arguments: dict) -> list[TextContent]:
             "warning": "MigratorXpress uses FastTransfer internally — do NOT also use FastTransfer for the same task.",
             "params": "auth_file (JSON credentials), source/target db auth IDs, schema names, task list",
             "steps": [
-                "1. `migratorxpress_validate_auth_file` — verify credentials file",
-                "2. `migratorxpress_suggest_workflow` — get the recommended task sequence",
+                "1. `migratorxpress_info` (action='workflow') — get the recommended task sequence",
+                "2. `migratorxpress_validate_auth_file` — verify credentials file",
                 "3. `migratorxpress_preview_command` — build and review the migration command",
                 "4. `migratorxpress_execute_command` — run the migration command",
             ],
