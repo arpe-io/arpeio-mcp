@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.0] - 2026-04-16
+
+### Changed
+
+- **Tool consolidation (32 → 17 tools)**: Merged read-only advisory tools (`list_formats`, `suggest_parallelism`, `suggest_workflow`, `get_version`) into one `{product}_info` tool per product with an `action` enum parameter. Removed redundant `validate_connection` tools from FastBCP and FastTransfer (preview already validates parameters). Unified 4 per-product `*_release_notes` tools into a single `arpe_release_notes` tool with a `product` parameter.
+- **Auto-parallelism in preview tools**: `fastbcp_preview_export` and `fasttransfer_preview_transfer` now auto-suggest a parallelism method when none is specified, based on the source database type. The suggestion and rationale are included in the preview output. Users can override by specifying explicit `method` and `degree`.
+- **Streamlined workflow**: Default workflow reduced from 4 steps (validate → suggest → preview → execute) to 2-3 steps (optional info → preview → execute). MCP instructions updated accordingly.
+
+### Added
+
+- **MCP Prompts**: 5 guided workflow prompts (`export-table`, `transfer-data`, `lakehouse-pipeline`, `migrate-database`, `troubleshoot`) that appear as conversation starters in Claude Desktop, Cursor, and other clients supporting MCP prompts.
+- **MCP Resources**: 4 static capability resources (`fastbcp-formats`, `fasttransfer-combinations`, `lakexpress-capabilities`, `migratorxpress-capabilities`) exposed as JSON. Clients that support MCP resources can prefetch these without a tool call.
+
+### Fixed
+
+- `server.json` version now stays in sync with `pyproject.toml`.
+
 ## [0.2.0] - 2026-04-15
 
 ### Added
