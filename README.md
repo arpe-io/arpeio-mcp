@@ -217,49 +217,46 @@ Then configure your AI assistant to use the `arpeio-mcp` command (stdio transpor
 | `*_LOG_DIR` | Per-tool log directory | No |
 | `LOG_LEVEL` | Logging level (DEBUG/INFO/WARNING/ERROR) | No |
 
-## Available Tools (32)
+## Available Tools (17)
 
-### FastBCP (8 tools)
-- `fastbcp_list_formats` — List supported databases, formats, and storage targets
-- `fastbcp_suggest_parallelism` — Recommend parallelism method for your table
-- `fastbcp_suggest_workflow` — Step-by-step export workflow with DB-specific tips
-- `fastbcp_validate_connection` — Validate source connection parameters
-- `fastbcp_preview_export` — Build and preview export command
-- `fastbcp_execute_export` — Execute export
-- `fastbcp_get_version` — Report version and capabilities
-- `fastbcp_release_notes` — Return release-notes text for a FastBCP version (optional `version` filter)
+Read-only advisory tools were consolidated into one `*_info` tool per product (with an `action` enum) and per-product release-notes tools were merged into a single `arpe_release_notes`. Auto-parallelism is now suggested inside `preview` so the typical workflow is **2 calls** (`preview` → `execute`) instead of 4.
 
-### FastTransfer (8 tools)
-- `fasttransfer_list_combinations` — List supported source-to-target database pairs
-- `fasttransfer_suggest_parallelism` — Recommend parallelism method for your table
-- `fasttransfer_suggest_workflow` — Step-by-step transfer workflow with tips
-- `fasttransfer_validate_connection` — Validate connection parameters
-- `fasttransfer_preview_transfer` — Build and preview transfer command
-- `fasttransfer_execute_transfer` — Execute transfer
-- `fasttransfer_get_version` — Report version and capabilities
-- `fasttransfer_release_notes` — Return release-notes text for a FastTransfer version
+### FastBCP (3 tools)
+- `fastbcp_info` — Read-only advisory: `action="formats" | "parallelism" | "workflow" | "version"`
+- `fastbcp_preview_export` — Validate parameters and render the command (auto-suggests parallelism when `method` is omitted)
+- `fastbcp_execute_export` — Run the export
 
-### LakeXpress (6 tools)
-- `lakexpress_list_capabilities` — List supported databases, backends, and targets
-- `lakexpress_suggest_workflow` — Recommend full command sequence
-- `lakexpress_preview_command` — Build and preview any LakeXpress command
-- `lakexpress_execute_command` — Execute command
-- `lakexpress_get_version` — Report version and capabilities
-- `lakexpress_release_notes` — Return release-notes text for a LakeXpress version
+### FastTransfer (3 tools)
+- `fasttransfer_info` — Read-only advisory: `action="combinations" | "parallelism" | "workflow" | "version"`
+- `fasttransfer_preview_transfer` — Validate parameters and render the command (auto-suggests parallelism)
+- `fasttransfer_execute_transfer` — Run the transfer
 
-### MigratorXpress (7 tools)
-- `migratorxpress_list_capabilities` — List databases, tasks, and modes
-- `migratorxpress_suggest_workflow` — Recommend migration task sequence
-- `migratorxpress_validate_auth_file` — Validate auth JSON file
-- `migratorxpress_preview_command` — Build and preview migration command
-- `migratorxpress_execute_command` — Execute migration
-- `migratorxpress_get_version` — Report version and capabilities
-- `migratorxpress_release_notes` — Return release-notes text for a MigratorXpress version
+### LakeXpress (3 tools)
+- `lakexpress_info` — Read-only advisory: `action="capabilities" | "workflow" | "version"`
+- `lakexpress_preview_command` — Build any LakeXpress command (`lxdb_*`, `config_*`, `sync`, `sync[export]`, `sync[publish]`, `run`, `status`, `cleanup`). On v0.4.0+ binaries, warns when `-a` / `--lxdb_auth_id` / `--sync_id` are missing on sync-family calls
+- `lakexpress_execute_command` — Run the command
 
-### Meta (3 tools)
-- `arpe_get_status` — Status of all tools (installed/command-builder-only)
-- `arpe_quick_start` — Detect the right tool from a use case description and get a workflow guide
-- `search_docs` — Search arpe.io documentation and blog with BM25 full-text search
+### MigratorXpress (4 tools)
+- `migratorxpress_info` — Read-only advisory: `action="capabilities" | "workflow" | "version"`
+- `migratorxpress_validate_auth_file` — Validate the JSON auth file (only file-I/O advisory tool kept separate)
+- `migratorxpress_preview_command` — Build the migrate command. Accepts the new `project` tag (v0.6.30+); warns on `migration_db_type="postgres"` against pre-0.6.32 binaries
+- `migratorxpress_execute_command` — Run the migration
+
+### Meta (4 tools)
+- `arpe_get_status` — Status of all four CLIs (installed / command-builder-only)
+- `arpe_quick_start` — Detect the right tool from a plain-English use case and return a workflow guide
+- `arpe_release_notes` — Return release-notes chunks for any product (`product="fastbcp" | "fasttransfer" | "lakexpress" | "migratorxpress"`, optional `version`)
+- `search_docs` — BM25 full-text search over arpe.io docs sites and blog
+
+## Prompts (5)
+
+Conversation starters surfaced by clients that support MCP prompts (Claude Desktop, Cursor, etc.):
+`export-table`, `transfer-data`, `lakehouse-pipeline`, `migrate-database`, `troubleshoot`.
+
+## Resources (4)
+
+Static capability matrices served as MCP resources so clients can prefetch them without a tool call:
+`arpeio://capabilities/fastbcp-formats`, `fasttransfer-combinations`, `lakexpress-capabilities`, `migratorxpress-capabilities`.
 
 ## License
 
