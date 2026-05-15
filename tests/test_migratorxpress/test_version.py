@@ -230,8 +230,8 @@ class TestVersionDetector:
         detector.detect()
         caps = detector.capabilities
 
-        # Should get the latest known capabilities (0.6.26)
-        assert caps == VERSION_REGISTRY["0.6.26"]
+        # Should get the latest known capabilities (0.6.32)
+        assert caps == VERSION_REGISTRY["0.6.32"]
 
     @patch("src.base.version_detector.subprocess.run")
     def test_capabilities_undetected_version(self, mock_run):
@@ -248,7 +248,7 @@ class TestVersionDetector:
         caps = detector.capabilities
 
         # Should fall back to latest known
-        assert caps == VERSION_REGISTRY["0.6.26"]
+        assert caps == VERSION_REGISTRY["0.6.32"]
 
     def test_registry_0624_source_completeness(self):
         """Test that 0.6.24 registry has all 4 expected source databases."""
@@ -335,3 +335,99 @@ class TestCheckVersionCompatibility:
             {"source_db_name": "mydb"}, caps, None
         )
         assert warnings == []
+
+    def test_project_on_0629_produces_warning(self):
+        """--project on 0.6.29 (pre-0.6.30) produces a version-gated warning."""
+        caps = VERSION_REGISTRY["0.6.29"]
+        version = ToolVersion(parts=(0, 6, 29))
+        warnings = check_version_compatibility(
+            {"project": "bob_bods_oracle"}, caps, version
+        )
+        assert len(warnings) == 1
+        assert "--project" in warnings[0]
+        assert "0.6.30" in warnings[0]
+
+    def test_project_on_0630_no_warning(self):
+        """--project on 0.6.30+ produces no warning."""
+        caps = VERSION_REGISTRY["0.6.30"]
+        version = ToolVersion(parts=(0, 6, 30))
+        warnings = check_version_compatibility(
+            {"project": "bob_bods_oracle"}, caps, version
+        )
+        assert warnings == []
+
+    def test_postgres_migration_db_on_0631_produces_warning(self):
+        """migration_db_type='postgres' on 0.6.31 produces a warning."""
+        caps = VERSION_REGISTRY["0.6.31"]
+        version = ToolVersion(parts=(0, 6, 31))
+        warnings = check_version_compatibility(
+            {"migration_db_type": "postgres"}, caps, version
+        )
+        assert len(warnings) == 1
+        assert "postgres" in warnings[0].lower()
+        assert "0.6.32" in warnings[0]
+
+    def test_postgres_migration_db_on_0632_no_warning(self):
+        """migration_db_type='postgres' on 0.6.32 produces no warning."""
+        caps = VERSION_REGISTRY["0.6.32"]
+        version = ToolVersion(parts=(0, 6, 32))
+        warnings = check_version_compatibility(
+            {"migration_db_type": "postgres"}, caps, version
+        )
+        assert warnings == []
+
+
+class TestProjectFieldValidation:
+    """Tests for the --project regex validator on MigrationParams."""
+
+    def _base_params(self, **overrides):
+        """Build a minimal MigrationParams kwargs dict with overrides."""
+        from src.migratorxpress.validators import MigrationParams
+
+        base = {
+            "auth_file": "/tmp/auth.json",
+            "source_db_auth_id": "src",
+            "source_db_name": "srcdb",
+            "target_db_auth_id": "tgt",
+            "target_db_name": "tgtdb",
+            "migration_db_auth_id": "mig",
+        }
+        base.update(overrides)
+        return MigrationParams(**base)
+
+    def test_project_accepts_valid(self):
+        """Letters, digits, underscore, hyphen up to 64 chars are accepted."""
+        params = self._base_params(project="bob_bods-oracle_42")
+        assert params.project == "bob_bods-oracle_42"
+
+    def test_project_accepts_max_length(self):
+        """A 64-char tag is accepted."""
+        tag = "a" * 64
+        params = self._base_params(project=tag)
+        assert params.project == tag
+
+    def test_project_rejects_too_long(self):
+        """A 65-char tag is rejected."""
+        import pytest
+
+        with pytest.raises(ValueError, match="project"):
+            self._base_params(project="a" * 65)
+
+    def test_project_rejects_bad_characters(self):
+        """Characters outside [A-Za-z0-9_-] are rejected."""
+        import pytest
+
+        with pytest.raises(ValueError, match="project"):
+            self._base_params(project="bad$tag")
+
+    def test_project_rejects_empty(self):
+        """An empty string is rejected."""
+        import pytest
+
+        with pytest.raises(ValueError, match="project"):
+            self._base_params(project="")
+
+    def test_project_none_ok(self):
+        """project=None (default) passes validation."""
+        params = self._base_params()
+        assert params.project is None

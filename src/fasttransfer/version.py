@@ -83,6 +83,61 @@ VERSION_REGISTRY: Dict[str, VersionCapabilities] = {
         supports_settings_file=True,
         supports_license_path=True,
     ),
+    "0.17.0.0": VersionCapabilities(
+        source_types=frozenset(
+            [
+                "clickhouse",
+                "duckdb",
+                "duckdbstream",
+                "hana",
+                "mssql",
+                "msoledbsql",
+                "mysql",
+                "nzoledb",
+                "nzsql",
+                "nzcopy",
+                "odbc",
+                "oledb",
+                "oraodp",
+                "pgcopy",
+                "pgsql",
+                "teradata",
+            ]
+        ),
+        target_types=frozenset(
+            [
+                "clickhousebulk",
+                "duckdb",
+                "hanabulk",
+                "msbulk",
+                "mysqlbulk",
+                "nzbulk",
+                "orabulk",
+                "oradirect",
+                "pgcopy",
+                "pgsql",
+                "teradata",
+            ]
+        ),
+        parallelism_methods=frozenset(
+            [
+                "Ctid",
+                "DataDriven",
+                "Ntile",
+                "NZDataSlice",
+                "None",
+                "Physloc",
+                "Random",
+                "RangeId",
+                "Rowid",
+            ]
+        ),
+        supports_nobanner=True,
+        supports_version_flag=True,
+        supports_file_input=True,
+        supports_settings_file=True,
+        supports_license_path=True,
+    ),
 }
 
 

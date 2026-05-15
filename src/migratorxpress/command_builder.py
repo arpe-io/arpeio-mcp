@@ -55,6 +55,8 @@ class CommandBuilder(BaseCommandBuilder):
             "supports_no_progress": caps.supports_no_progress,
             "supports_quiet_ft": caps.supports_quiet_ft,
             "supports_log_dir": caps.supports_log_dir,
+            "supports_project": caps.supports_project,
+            "supports_postgres_migration_db": caps.supports_postgres_migration_db,
         }
 
     def build_command(self, params: MigrationParams) -> List[str]:
@@ -185,6 +187,10 @@ class CommandBuilder(BaseCommandBuilder):
             cmd.extend(["--license", params.license])
         if params.license_file:
             cmd.extend(["--license_file", params.license_file])
+
+        # Project tag (0.6.30+)
+        if params.project:
+            cmd.extend(["--project", params.project])
 
         return cmd
 

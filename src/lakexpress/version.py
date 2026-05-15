@@ -31,6 +31,10 @@ class VersionCapabilities:
     supports_resume: bool = False
     supports_license: bool = False
     supports_env_name: bool = False
+    # The local sync registry (~/.lakexpress/syncs.json) was removed in v0.4.0,
+    # so -a, --lxdb_auth_id, and --sync_id are mandatory on every sync call.
+    # Pre-0.4 versions defaulted to True (registry-backed); 0.4+ flips this off.
+    supports_sync_registry: bool = True
 
 
 # Static version registry: version string -> capabilities
@@ -340,6 +344,250 @@ VERSION_REGISTRY: Dict[str, VersionCapabilities] = {
         supports_resume=True,
         supports_license=True,
         supports_env_name=True,
+        supports_sync_registry=False,
+    ),
+    "0.4.1": VersionCapabilities(
+        source_databases=frozenset(
+            [
+                "sqlserver",
+                "postgresql",
+                "oracle",
+                "mysql",
+                "mariadb",
+                "saphana",
+                "teradata",
+            ]
+        ),
+        log_databases=frozenset(
+            [
+                "sqlserver",
+                "postgresql",
+                "mysql",
+                "sqlite",
+                "duckdb",
+            ]
+        ),
+        storage_backends=frozenset(
+            [
+                "local",
+                "s3",
+                "s3compatible",
+                "gcs",
+                "azure_adls",
+                "onelake",
+            ]
+        ),
+        publish_targets=frozenset(
+            [
+                "snowflake",
+                "databricks",
+                "fabric",
+                "bigquery",
+                "motherduck",
+                "glue",
+                "ducklake",
+                "redshift",
+            ]
+        ),
+        compression_types=frozenset(
+            [
+                "Zstd",
+                "Snappy",
+                "Gzip",
+                "Lz4",
+                "None",
+            ]
+        ),
+        commands=frozenset(
+            [
+                "lxdb_init",
+                "lxdb_drop",
+                "lxdb_truncate",
+                "lxdb_locks",
+                "lxdb_release_locks",
+                "config_create",
+                "config_delete",
+                "config_list",
+                "sync",
+                "sync_export",
+                "sync_publish",
+                "run",
+                "status",
+                "cleanup",
+            ]
+        ),
+        supports_no_banner=True,
+        supports_version_flag=True,
+        supports_incremental=True,
+        supports_cleanup=True,
+        supports_quiet_fbcp=True,
+        supports_no_progress=True,
+        supports_resume=True,
+        supports_license=True,
+        supports_env_name=True,
+        supports_sync_registry=False,
+    ),
+    "0.4.2": VersionCapabilities(
+        source_databases=frozenset(
+            [
+                "sqlserver",
+                "postgresql",
+                "oracle",
+                "mysql",
+                "mariadb",
+                "saphana",
+                "teradata",
+            ]
+        ),
+        log_databases=frozenset(
+            [
+                "sqlserver",
+                "postgresql",
+                "mysql",
+                "sqlite",
+                "duckdb",
+            ]
+        ),
+        storage_backends=frozenset(
+            [
+                "local",
+                "s3",
+                "s3compatible",
+                "gcs",
+                "azure_adls",
+                "onelake",
+            ]
+        ),
+        publish_targets=frozenset(
+            [
+                "snowflake",
+                "databricks",
+                "fabric",
+                "bigquery",
+                "motherduck",
+                "glue",
+                "ducklake",
+                "redshift",
+            ]
+        ),
+        compression_types=frozenset(
+            [
+                "Zstd",
+                "Snappy",
+                "Gzip",
+                "Lz4",
+                "None",
+            ]
+        ),
+        commands=frozenset(
+            [
+                "lxdb_init",
+                "lxdb_drop",
+                "lxdb_truncate",
+                "lxdb_locks",
+                "lxdb_release_locks",
+                "config_create",
+                "config_delete",
+                "config_list",
+                "sync",
+                "sync_export",
+                "sync_publish",
+                "run",
+                "status",
+                "cleanup",
+            ]
+        ),
+        supports_no_banner=True,
+        supports_version_flag=True,
+        supports_incremental=True,
+        supports_cleanup=True,
+        supports_quiet_fbcp=True,
+        supports_no_progress=True,
+        supports_resume=True,
+        supports_license=True,
+        supports_env_name=True,
+        supports_sync_registry=False,
+    ),
+    "0.4.3": VersionCapabilities(
+        source_databases=frozenset(
+            [
+                "sqlserver",
+                "postgresql",
+                "oracle",
+                "mysql",
+                "mariadb",
+                "saphana",
+                "teradata",
+            ]
+        ),
+        log_databases=frozenset(
+            [
+                "sqlserver",
+                "postgresql",
+                "mysql",
+                "sqlite",
+                "duckdb",
+            ]
+        ),
+        storage_backends=frozenset(
+            [
+                "local",
+                "s3",
+                "s3compatible",
+                "gcs",
+                "azure_adls",
+                "onelake",
+            ]
+        ),
+        publish_targets=frozenset(
+            [
+                "snowflake",
+                "databricks",
+                "fabric",
+                "bigquery",
+                "motherduck",
+                "glue",
+                "ducklake",
+                "redshift",
+            ]
+        ),
+        compression_types=frozenset(
+            [
+                "Zstd",
+                "Snappy",
+                "Gzip",
+                "Lz4",
+                "None",
+            ]
+        ),
+        commands=frozenset(
+            [
+                "lxdb_init",
+                "lxdb_drop",
+                "lxdb_truncate",
+                "lxdb_locks",
+                "lxdb_release_locks",
+                "config_create",
+                "config_delete",
+                "config_list",
+                "sync",
+                "sync_export",
+                "sync_publish",
+                "run",
+                "status",
+                "cleanup",
+            ]
+        ),
+        supports_no_banner=True,
+        supports_version_flag=True,
+        supports_incremental=True,
+        supports_cleanup=True,
+        supports_quiet_fbcp=True,
+        supports_no_progress=True,
+        supports_resume=True,
+        supports_license=True,
+        supports_env_name=True,
+        supports_sync_registry=False,
     ),
 }
 
@@ -424,6 +672,24 @@ def check_version_compatibility(
             warnings.append(
                 f"Redshift publish target requires LakeXpress 0.4.0+, "
                 f"but detected version is {ver_str}"
+            )
+
+    # LakeXpress 0.4.0+ removed the local sync registry, so -a / --lxdb_auth_id /
+    # --sync_id are mandatory on every sync, sync_export, sync_publish call.
+    if command in ("sync", "sync_export", "sync_publish") and not capabilities.supports_sync_registry:
+        missing: list[str] = []
+        if not params.get("sync_id"):
+            missing.append("--sync_id")
+        if not params.get("log_db_auth_id"):
+            missing.append("--lxdb_auth_id")
+        if not params.get("auth_file"):
+            missing.append("-a (auth_file)")
+        if missing:
+            ver_str = str(detected_version) if detected_version else "unknown"
+            warnings.append(
+                f"LakeXpress {ver_str} requires {', '.join(missing)} on every "
+                f"{command} call -- the local sync registry "
+                f"(~/.lakexpress/syncs.json) was removed in 0.4.0."
             )
 
     return warnings

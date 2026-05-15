@@ -2,10 +2,17 @@
 Version mappings and URL templates for arpe.io documentation sites.
 """
 
-FASTBCP_DOC_VERSIONS = ["0.28", "0.29", "0.30", "0.31"]
-FASTTRANSFER_DOC_VERSIONS = ["0.14", "0.15", "0.16"]
+FASTBCP_DOC_VERSIONS = ["0.28", "0.29", "0.30", "0.31", "0.32"]
+FASTTRANSFER_DOC_VERSIONS = ["0.14", "0.15", "0.16", "0.17"]
 LAKEXPRESS_DOC_VERSIONS = ["0.2", "0.3", "0.4"]
-MIGRATORXPRESS_DOC_VERSIONS = ["0.6.27"]
+MIGRATORXPRESS_DOC_VERSIONS = [
+    "0.6.27",
+    "0.6.28",
+    "0.6.29",
+    "0.6.30",
+    "0.6.31",
+    "0.6.32",
+]
 
 # Release-notes URL templates ({version} is substituted with e.g. "0.31")
 RELEASE_NOTES_URLS = {

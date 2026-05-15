@@ -414,3 +414,54 @@ class TestCheckVersionCompatibility:
             "sync", {"sync_id": "my_sync"}, caps, version
         )
         assert warnings == []
+
+    def test_sync_on_040_missing_all_required_args_warns(self):
+        """sync on 0.4.0 missing -a, --lxdb_auth_id, and --sync_id warns about all three."""
+        caps = VERSION_REGISTRY["0.4.0"]
+        version = ToolVersion(parts=(0, 4, 0))
+        warnings = check_version_compatibility("sync", {}, caps, version)
+        assert len(warnings) == 1
+        msg = warnings[0]
+        assert "--sync_id" in msg
+        assert "--lxdb_auth_id" in msg
+        assert "auth_file" in msg
+        assert "0.4.0" in msg or "0, 4, 0" in msg
+
+    def test_sync_on_043_all_required_args_provided_no_warning(self):
+        """sync on 0.4.3 with all three required args produces no sync-registry warning."""
+        caps = VERSION_REGISTRY["0.4.3"]
+        version = ToolVersion(parts=(0, 4, 3))
+        warnings = check_version_compatibility(
+            "sync",
+            {
+                "sync_id": "my_sync",
+                "log_db_auth_id": "tracking_db",
+                "auth_file": "/tmp/auth.json",
+            },
+            caps,
+            version,
+        )
+        assert warnings == []
+
+    def test_sync_on_030_missing_args_no_warning(self):
+        """sync on 0.3.0 (pre-removal) does NOT warn about missing sync registry args."""
+        caps = VERSION_REGISTRY["0.3.0"]
+        version = ToolVersion(parts=(0, 3, 0))
+        warnings = check_version_compatibility("sync", {}, caps, version)
+        # 0.3.0 still had the local sync registry, so all three are optional.
+        assert warnings == []
+
+    def test_sync_export_on_042_missing_lxdb_auth_id_warns(self):
+        """sync_export on 0.4.2 missing only --lxdb_auth_id warns and names the missing flag."""
+        caps = VERSION_REGISTRY["0.4.2"]
+        version = ToolVersion(parts=(0, 4, 2))
+        warnings = check_version_compatibility(
+            "sync_export",
+            {"sync_id": "my_sync", "auth_file": "/tmp/auth.json"},
+            caps,
+            version,
+        )
+        assert len(warnings) == 1
+        assert "--lxdb_auth_id" in warnings[0]
+        assert "--sync_id" not in warnings[0]
+        assert "auth_file" not in warnings[0]

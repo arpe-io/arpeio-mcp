@@ -191,6 +191,30 @@ class MigrationParams(BaseModel):
     )
     license_file: Optional[str] = Field(None, description="Path to license file")
 
+    # Project tag (0.6.30+)
+    project: Optional[str] = Field(
+        None,
+        description=(
+            "Project tag attached to this run (0.6.30+). Stored on "
+            "sourcetargetloads, eventlog, and sourcetargetdiff for later "
+            "WHERE project='...' filtering. Letters, digits, underscore, "
+            "hyphen; max 64 chars."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_project_format(self):
+        """Validate --project tag matches ^[A-Za-z0-9_-]{1,64}$ when provided."""
+        if self.project is not None:
+            import re
+
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", self.project):
+                raise ValueError(
+                    "'project' must contain only letters, digits, underscore, "
+                    "or hyphen, and be 1-64 characters long."
+                )
+        return self
+
     @model_validator(mode="after")
     def validate_task_list_values(self):
         """Validate that all task_list values are valid and 'all' is not combined."""

@@ -329,6 +329,13 @@ class SyncParams(BaseModel):
         None, description="Specific run_id to resume or continue"
     )
     auth_file: Optional[str] = Field(None, description="Override auth file")
+    log_db_auth_id: Optional[str] = Field(
+        None,
+        description=(
+            "Credential ID for the lxdb tracking DB. Required on "
+            "LakeXpress 0.4.0+ -- the local sync registry was removed in 0.4.0."
+        ),
+    )
     fastbcp_dir_path: Optional[str] = Field(
         None, description="Override FastBCP location"
     )
@@ -348,6 +355,13 @@ class SyncExportParams(BaseModel):
 
     sync_id: Optional[str] = Field(None, description="The sync_id to execute")
     auth_file: Optional[str] = Field(None, description="Override auth file")
+    log_db_auth_id: Optional[str] = Field(
+        None,
+        description=(
+            "Credential ID for the lxdb tracking DB. Required on "
+            "LakeXpress 0.4.0+ -- the local sync registry was removed in 0.4.0."
+        ),
+    )
     fastbcp_dir_path: Optional[str] = Field(
         None, description="Override FastBCP location"
     )
@@ -368,6 +382,13 @@ class SyncPublishParams(BaseModel):
     sync_id: Optional[str] = Field(None, description="The sync_id to publish")
     run_id: Optional[str] = Field(None, description="Specific run_id to publish")
     auth_file: Optional[str] = Field(None, description="Override auth file")
+    log_db_auth_id: Optional[str] = Field(
+        None,
+        description=(
+            "Credential ID for the lxdb tracking DB. Required on "
+            "LakeXpress 0.4.0+ -- the local sync registry was removed in 0.4.0."
+        ),
+    )
     log_level: Optional[LogLevel] = Field(None, description="Logging verbosity level")
     log_dir: Optional[str] = Field(None, description="Directory for log files")
     no_progress: bool = Field(False, description="Disable progress bar display")

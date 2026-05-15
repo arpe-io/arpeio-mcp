@@ -360,6 +360,8 @@ class CommandBuilder(BaseCommandBuilder):
             cmd.extend(["--run_id", params.run_id])
         if params.auth_file:
             cmd.extend(["-a", params.auth_file])
+        if params.log_db_auth_id:
+            cmd.extend(["--lxdb_auth_id", params.log_db_auth_id])
         if params.fastbcp_dir_path:
             cmd.extend(["--fastbcp_dir_path", params.fastbcp_dir_path])
         if params.quiet_fbcp:
@@ -374,6 +376,8 @@ class CommandBuilder(BaseCommandBuilder):
             cmd.extend(["--sync_id", params.sync_id])
         if params.auth_file:
             cmd.extend(["-a", params.auth_file])
+        if params.log_db_auth_id:
+            cmd.extend(["--lxdb_auth_id", params.log_db_auth_id])
         if params.fastbcp_dir_path:
             cmd.extend(["--fastbcp_dir_path", params.fastbcp_dir_path])
         if params.quiet_fbcp:
@@ -390,6 +394,8 @@ class CommandBuilder(BaseCommandBuilder):
             cmd.extend(["--run_id", params.run_id])
         if params.auth_file:
             cmd.extend(["-a", params.auth_file])
+        if params.log_db_auth_id:
+            cmd.extend(["--lxdb_auth_id", params.log_db_auth_id])
         cmd.extend(self._build_common_options(params))
         return cmd
 

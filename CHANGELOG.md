@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.3.1] - 2026-05-15
+
+### Added
+
+- **FastBCP 0.32.4.0 support**: New version entry in the FastBCP capability registry. 0.32.x is an internal upgrade to Parquet.Net v6, an internal `rowgroupsize` setter, and S3-init retry/backoff — capability surface (sources, formats, parallelism methods, storage targets) is unchanged from 0.31.
+- **FastTransfer 0.17.0.0 support**: New version entry. 0.17.0 is a `Program.Main()` refactor (six helper blocks extracted to `src/main/MainHelpers.*.cs`), DuckDB target perf improvements, and C# 14 / .NET 7 drop — capability surface unchanged from 0.16.
+- **LakeXpress 0.4.1 / 0.4.2 / 0.4.3 support**: Three new version entries. All three are Teradata→Redshift schema-mapper fixes (NUMBER precision, Unicode CHAR, VARBYTE mapping, intervals/periods/XML/JSON/TIMETZ/TIMESTAMPTZ) — capability surface unchanged from 0.4.0.
+- **MigratorXpress 0.6.27–0.6.32 support**: Six new version entries.
+  - **0.6.30** introduces the `--project` CLI tag — now exposed as a new `project` parameter on `migratorxpress_preview_command` / `migratorxpress_execute_command`. The tag is validated client-side (`^[A-Za-z0-9_-]{1,64}$`) before the command is built.
+  - **0.6.32** introduces PostgreSQL as a tracking-DB backend (`ds_type: postgres` on the migration-DB auth entry) — added to the `migration_db_types` capability set.
+- **`log_db_auth_id` field on LakeXpress sync models**: `SyncParams`, `SyncExportParams`, and `SyncPublishParams` now accept `log_db_auth_id`, which is emitted as `--lxdb_auth_id <value>` on every `sync` / `sync[export]` / `sync[publish]` command. Required on LakeXpress 0.4.0+ (the local sync registry `~/.lakexpress/syncs.json` was removed in 0.4.0).
+
+### Changed
+
+- **LakeXpress `check_version_compatibility`**: Now emits a warning when a `sync`, `sync[export]`, or `sync[publish]` command is built against a 0.4.0+ binary and any of `-a` / `--lxdb_auth_id` / `--sync_id` is missing. A new `supports_sync_registry` capability flag (default `True`, set `False` on 0.4.x entries) tracks this gate.
+- **MigratorXpress `check_version_compatibility`**: Now emits a warning when `--project` is used against a pre-0.6.30 binary, and when `migration_db_type='postgres'` is requested against a pre-0.6.32 binary.
+
+### Notes
+
+- FastBCP 0.32 and FastTransfer 0.17 are internal refactors with no new user-facing CLI surface; only the registry entries were added so version-detection resolves correctly.
+- LakeXpress 0.4.1–0.4.3 are Teradata→Redshift mapping fixes and do not introduce new sources, publish targets, commands, or feature flags.
+
 ## [0.3.0] - 2026-04-16
 
 ### Changed
