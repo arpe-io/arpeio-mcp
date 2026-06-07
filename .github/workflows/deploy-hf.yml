@@ -1,0 +1,43 @@
+name: Deploy to Hugging Face Space
+
+# Mirrors the released commit to the Hugging Face Space, which rebuilds the
+# Docker container automatically on push. Runs on every published GitHub release
+# (alongside the PyPI publish workflow), and can also be triggered manually.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Avoid two deploys racing to push to the Space at once.
+concurrency:
+  group: deploy-hf
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the released commit
+        uses: actions/checkout@v4
+        with:
+          # Full history so the push to the Space is a normal fast-forward,
+          # not a shallow/forced overwrite.
+          fetch-depth: 0
+
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HF_TOKEN:-}" ]; then
+            echo "::error::HF_TOKEN secret is not set. Add a write-scoped Hugging Face token" \
+                 "at Settings → Secrets and variables → Actions → New repository secret (name: HF_TOKEN)."
+            exit 1
+          fi
+          # The username portion is ignored by Hugging Face when a token is supplied;
+          # the token must have write access to the arpe-io/arpeio-mcp Space.
+          git push "https://arpe-io:${HF_TOKEN}@huggingface.co/spaces/arpe-io/arpeio-mcp" HEAD:main
+          echo "Pushed $(git rev-parse --short HEAD) to the Hugging Face Space; it will rebuild now."
