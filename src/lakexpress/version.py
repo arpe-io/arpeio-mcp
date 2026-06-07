@@ -589,6 +589,89 @@ VERSION_REGISTRY: Dict[str, VersionCapabilities] = {
         supports_env_name=True,
         supports_sync_registry=False,
     ),
+    # 0.4.4: supply-chain/release-pipeline hardening (SBOM-in-zip, TruffleHog gate,
+    # private full-zip ACLs, prerelease gating). No CLI surface change vs 0.4.3.
+    "0.4.4": VersionCapabilities(
+        source_databases=frozenset(
+            [
+                "sqlserver",
+                "postgresql",
+                "oracle",
+                "mysql",
+                "mariadb",
+                "saphana",
+                "teradata",
+            ]
+        ),
+        log_databases=frozenset(
+            [
+                "sqlserver",
+                "postgresql",
+                "mysql",
+                "sqlite",
+                "duckdb",
+            ]
+        ),
+        storage_backends=frozenset(
+            [
+                "local",
+                "s3",
+                "s3compatible",
+                "gcs",
+                "azure_adls",
+                "onelake",
+            ]
+        ),
+        publish_targets=frozenset(
+            [
+                "snowflake",
+                "databricks",
+                "fabric",
+                "bigquery",
+                "motherduck",
+                "glue",
+                "ducklake",
+                "redshift",
+            ]
+        ),
+        compression_types=frozenset(
+            [
+                "Zstd",
+                "Snappy",
+                "Gzip",
+                "Lz4",
+                "None",
+            ]
+        ),
+        commands=frozenset(
+            [
+                "lxdb_init",
+                "lxdb_drop",
+                "lxdb_truncate",
+                "lxdb_locks",
+                "lxdb_release_locks",
+                "config_create",
+                "config_delete",
+                "config_list",
+                "sync",
+                "sync_export",
+                "sync_publish",
+                "run",
+                "status",
+                "cleanup",
+            ]
+        ),
+        supports_no_banner=True,
+        supports_version_flag=True,
+        supports_incremental=True,
+        supports_cleanup=True,
+        supports_quiet_fbcp=True,
+        supports_no_progress=True,
+        supports_resume=True,
+        supports_license=True,
+        supports_env_name=True,
+        supports_sync_registry=False,
+    ),
 }
 
 

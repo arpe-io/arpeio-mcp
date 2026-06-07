@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Evaluation set for the arpeio-mcp server (Phase 4 of the MCP-builder workflow).
+
+  Each question is independent, read-only, and has a single stable answer that an
+  LLM should be able to reach by calling the server's tools (fastbcp_info /
+  fasttransfer_info / lakexpress_info / migratorxpress_info with action="..."
+  and the appropriate parameters, arpe_quick_start, arpe_release_notes, or
+  search_docs). Answers are verifiable by case-insensitive string comparison.
+
+  See evaluations/README.md for how to run these.
+-->
+<evaluation>
+  <qa_pair>
+    <question>I need to export a large PostgreSQL table to Parquet with FastBCP, but the table has no numeric key column to partition on. Which FastBCP parallelism method does the server recommend for this case?</question>
+    <answer>Ctid</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Using FastBCP to export a large Oracle table that has no numeric or identity key column, which parallelism method should be used so that no key column is required?</question>
+    <answer>Rowid</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>For a large SQL Server table with no usable key column, which FastBCP parallelism method splits the work by physical location without needing a key?</question>
+    <answer>Physloc</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>FastBCP can extract from Netezza in parallel using that database's own native data-distribution mechanism. What is the name of that parallelism method?</question>
+    <answer>NZDataSlice</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>MigratorXpress added a run tag (the "--project" parameter) that is stored on the tracking tables for later filtering. What is the minimum MigratorXpress version that supports the --project parameter?</question>
+    <answer>0.6.30</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Starting from which MigratorXpress version can the migration tracking database itself use a PostgreSQL backend (ds_type='postgres') instead of only SQL Server?</question>
+    <answer>0.6.32</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>LakeXpress removed its local sync registry (~/.lakexpress/syncs.json), which made the auth file, the lxdb auth id, and the sync id mandatory on every sync call. In which LakeXpress version was the local sync registry removed?</question>
+    <answer>0.4.0</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Which cloud lakehouse publish target became available in LakeXpress version 0.4.0 that was not supported in 0.3.0?</question>
+    <answer>Redshift</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Which source database did LakeXpress add support for in version 0.4.0 that earlier 0.3.x releases did not support?</question>
+    <answer>Teradata</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>A user wants to migrate both the schema and the data from an Oracle database to a PostgreSQL database, including DDL translation and copying primary/foreign keys, across the two different platforms. Which of the four arpe.io tools should be used for this task?</question>
+    <answer>MigratorXpress</answer>
+  </qa_pair>
+</evaluation>

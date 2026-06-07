@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.2] - 2026-06-07
+
+### Added
+
+- **Structured tool output (`outputSchema` + `structuredContent`)**: The command-building, execution, and discovery tools now return machine-readable structured content alongside the human-readable markdown, so MCP clients can chain calls without scraping prose. Covered tools: `fastbcp_preview_export` / `fastbcp_execute_export`, `fasttransfer_preview_transfer` / `fasttransfer_execute_transfer`, `lakexpress_preview_command` / `lakexpress_execute_command`, `migratorxpress_preview_command` / `migratorxpress_execute_command`, `search_docs`, `arpe_get_status`, `arpe_quick_start`, and `arpe_release_notes`.
+  - Preview tools return the built `command` (argv), `command_string`, masked `command_display`, `explanation`, and version `warnings` — the exact command can be handed straight to the matching execute tool.
+  - Execute tools return `success`, `return_code`, `stdout`, `stderr`, and parsed `diagnostics`.
+  - Every schema uses a permissive `status` discriminator (`ok`/`error`) so success, validation-error, and execution-error paths all conform.
+- **Evaluation suite** (`evaluations/arpeio_eval.xml`): 10 independent, read-only, verifiable questions exercising tool selection, parallelism recommendations, capability lookups, and version gating, plus a guard test (`tests/test_evaluations.py`) that re-derives every answer from the registries so the answer key cannot silently drift.
+- **MigratorXpress 0.6.33 / 0.6.34 support** and **LakeXpress 0.4.4 support**: New capability-registry entries (and doc-search version lists) so version detection resolves correctly. All three are supply-chain / CI / trial-mechanism releases with no new user-facing CLI surface.
+
+### Changed
+
+- **Shared structured-output helpers** (`src/base/structured.py`): `make_output_schema()` and `respond()` centralize the `(content, structured)` return contract; the server's global tool dispatcher now returns structured error content so `outputSchema`-bearing tools stay schema-valid even on unexpected errors.
+- **Sharper tool guidance**: workflow/next-step text and parameter descriptions no longer reference tools removed in the 0.3.0 consolidation (e.g. `*_suggest_parallelism`, `*_list_formats`, `*_validate_connection`); they now point at the consolidated `*_info` actions and the preview tools, preventing failed tool calls.
+
+### Notes
+
+- MigratorXpress 0.6.33/0.6.34 and LakeXpress 0.4.4 add no new sources, targets, commands, parameters, or feature flags; only registry entries were added.
+
 ## [0.3.1] - 2026-05-15
 
 ### Added

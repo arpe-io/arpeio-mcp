@@ -248,6 +248,18 @@ Read-only advisory tools were consolidated into one `*_info` tool per product (w
 - `arpe_release_notes` — Return release-notes chunks for any product (`product="fastbcp" | "fasttransfer" | "lakexpress" | "migratorxpress"`, optional `version`)
 - `search_docs` — BM25 full-text search over arpe.io docs sites and blog
 
+## Structured output
+
+The command-building, execution, and discovery tools return **structured content**
+(`outputSchema` + `structuredContent`) alongside the human-readable markdown, so
+MCP clients can chain calls programmatically instead of parsing prose:
+
+- **`*_preview_*`** → the built `command` (argv), `command_string`, masked `command_display`, `explanation`, and version `warnings`. The exact command can be handed straight to the matching `*_execute_*` tool.
+- **`*_execute_*`** → `success`, `return_code`, `stdout`, `stderr`, and parsed `diagnostics`.
+- **`search_docs`** → ranked `results` records; **`arpe_get_status`** → per-product status; **`arpe_release_notes`** → release-notes `chunks`.
+
+Each payload carries a `status` field (`ok` / `error`) so success and error responses are both machine-checkable.
+
 ## Prompts (5)
 
 Conversation starters surfaced by clients that support MCP prompts (Claude Desktop, Cursor, etc.):
@@ -257,6 +269,17 @@ Conversation starters surfaced by clients that support MCP prompts (Claude Deskt
 
 Static capability matrices served as MCP resources so clients can prefetch them without a tool call:
 `arpeio://capabilities/fastbcp-formats`, `fasttransfer-combinations`, `lakexpress-capabilities`, `migratorxpress-capabilities`.
+
+## Evaluations
+
+`evaluations/arpeio_eval.xml` holds 10 read-only, verifiable questions used to check
+that an LLM can drive the server to correct answers (tool selection, parallelism
+recommendations, capability lookups, version gating). A guard test re-derives every
+answer from the capability registries so the answer key stays honest:
+
+```bash
+python -m pytest tests/test_evaluations.py -q
+```
 
 ## License
 

@@ -30,6 +30,7 @@ except ImportError as e:
     sys.exit(1)
 
 from src.instructions import INSTRUCTIONS
+from src.base.structured import make_output_schema, respond
 from src.fastbcp.command_builder import CommandBuilder as FastBCPCommandBuilder
 from src.fastbcp.tools import create_tools as create_fastbcp_tools
 from src.fasttransfer.command_builder import CommandBuilder as FastTransferCommandBuilder
@@ -132,6 +133,22 @@ all_tools.append(
             idempotentHint=True,
             openWorldHint=False,
         ),
+        outputSchema=make_output_schema({
+            "tools": {
+                "type": "array",
+                "description": "Per-product status records.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "mode": {"type": "string", "description": "'command_builder' or 'full'."},
+                        "version": {"type": "string"},
+                        "binary_path": {"type": "string"},
+                    },
+                },
+            },
+            "total_tools": {"type": "integer", "description": "Number of registered MCP tools."},
+        }),
         inputSchema={"type": "object", "properties": {}},
     )
 )
@@ -152,6 +169,11 @@ all_tools.append(
             idempotentHint=True,
             openWorldHint=False,
         ),
+        outputSchema=make_output_schema({
+            "selected_product": {"type": "string", "description": "Recommended product, 'all', or null if undetermined."},
+            "steps": {"type": "array", "items": {"type": "string"}, "description": "Recommended sequence of tool calls."},
+            "warning": {"type": "string", "description": "Cross-tool caveat (e.g. internal use of FastBCP/FastTransfer)."},
+        }),
         inputSchema={
             "type": "object",
             "properties": {
@@ -197,6 +219,18 @@ all_tools.append(
             idempotentHint=True,
             openWorldHint=False,
         ),
+        outputSchema=make_output_schema({
+            "product": {"type": "string"},
+            "version": {"type": ["string", "null"], "description": "Requested version, or null for the newest indexed."},
+            "count": {"type": "integer", "description": "Number of release-notes chunks returned."},
+            "chunks": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}, "text": {"type": "string"}},
+                },
+            },
+        }),
         inputSchema={
             "type": "object",
             "properties": {
@@ -224,10 +258,11 @@ async def _release_notes_dispatch(name: str, arguments: dict):
     product = (arguments or {}).get("product", "")
     handler = _rn_product_handlers.get(product)
     if handler is None:
-        return [TextContent(
-            type="text",
-            text=f"Unknown product '{product}'. Valid: fastbcp, fasttransfer, lakexpress, migratorxpress.",
-        )]
+        return respond(
+            f"Unknown product '{product}'. Valid: fastbcp, fasttransfer, lakexpress, migratorxpress.",
+            {"status": "error", "tool": "arpe_release_notes",
+             "error": f"Unknown product '{product}'."},
+        )
     return await handler(arguments or {})
 
 
@@ -464,11 +499,18 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                 return result
 
         logger.warning(f"No handler matched tool '{name}'")
-        return [TextContent(type="text", text=f"Error: Unknown tool '{name}'")]
+        return respond(
+            f"Error: Unknown tool '{name}'",
+            {"status": "error", "tool": name, "error": f"Unknown tool '{name}'."},
+        )
 
     except Exception as e:
         logger.exception(f"Error handling tool '{name}': {e}")
-        return [TextContent(type="text", text=f"Error: {str(e)}")]
+        # Structured so tools that declare an outputSchema still satisfy it on error.
+        return respond(
+            f"Error: {str(e)}",
+            {"status": "error", "tool": name, "error": str(e)},
+        )
 
 
 async def handle_arpe_status() -> list[TextContent]:
@@ -485,28 +527,41 @@ async def handle_arpe_status() -> list[TextContent]:
         ("MigratorXpress", MigratorXpressCommandBuilder, TOOL_CONFIGS["migratorxpress"]),
     ]
 
+    tool_records: list[dict] = []
     for name, builder_cls, config in tool_info:
         response.append(f"## {name}")
         response.append(f"- **Binary Path**: `{config['path']}`")
+        record: dict = {"name": name, "binary_path": str(config["path"])}
 
         try:
             builder = builder_cls(config["path"])
             if builder.preview_only:
                 response.append("- **Mode**: Command builder — build, preview, and validate commands (default mode, fully functional)")
                 response.append("- **Execution**: Install the binary from https://arpe.io to also run commands directly")
+                record["mode"] = "command_builder"
             else:
                 version_info = builder.get_version()
                 version_str = version_info.get("version", "Unknown")
                 response.append(f"- **Mode**: Full (command builder + execution)")
                 response.append(f"- **Version**: {version_str}")
+                record["mode"] = "full"
+                record["version"] = str(version_str)
         except Exception as e:
             response.append(f"- **Status**: Error ({e})")
+            record["mode"] = "error"
+            record["error"] = str(e)
 
+        tool_records.append(record)
         response.append("")
 
     response.append(f"**Total tools registered**: {len(all_tools)}")
 
-    return [TextContent(type="text", text="\n".join(response))]
+    return respond("\n".join(response), {
+        "status": "ok",
+        "tool": "arpe_get_status",
+        "tools": tool_records,
+        "total_tools": len(all_tools),
+    })
 
 
 async def handle_arpe_quick_start(arguments: dict) -> list[TextContent]:
@@ -629,7 +684,16 @@ async def handle_arpe_quick_start(arguments: dict) -> list[TextContent]:
         response.append("## Recommended sequence:")
         response.extend(wf["steps"])
 
-    return [TextContent(type="text", text="\n".join(response))]
+    structured: dict = {
+        "status": "ok",
+        "tool": "arpe_quick_start",
+        "selected_product": selected if isinstance(selected, str) else "undetermined",
+    }
+    if isinstance(selected, str) and selected in workflows:
+        structured["steps"] = workflows[selected]["steps"]
+        if workflows[selected]["warning"]:
+            structured["warning"] = workflows[selected]["warning"]
+    return respond("\n".join(response), structured)
 
 
 async def _run():

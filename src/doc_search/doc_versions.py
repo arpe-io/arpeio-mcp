@@ -12,6 +12,8 @@ MIGRATORXPRESS_DOC_VERSIONS = [
     "0.6.30",
     "0.6.31",
     "0.6.32",
+    "0.6.33",
+    "0.6.34",
 ]
 
 # Release-notes URL templates ({version} is substituted with e.g. "0.31")

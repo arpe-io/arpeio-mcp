@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from mcp.types import Tool, ToolAnnotations, TextContent
 
+from .structured import respond
 from ..doc_search.index import SearchEngine
 
 ProductKey = str  # "fastbcp" | "fasttransfer" | "lakexpress" | "migratorxpress"
@@ -23,7 +24,7 @@ _PRODUCT_DISPLAY_NAMES: Dict[ProductKey, str] = {
 def build_release_notes_tool(
     product: ProductKey,
     search_engine: SearchEngine,
-) -> Tuple[Tool, Callable[[Dict[str, Any]], Awaitable[List[TextContent]]]]:
+) -> Tuple[Tool, Callable[[Dict[str, Any]], Awaitable[Tuple[List[TextContent], Dict[str, Any]]]]]:
     """Build a `{product}_release_notes` Tool and its async handler.
 
     The tool returns text chunks from the indexed release-notes pages for the
@@ -61,7 +62,7 @@ def build_release_notes_tool(
         },
     )
 
-    async def handler(arguments: Dict[str, Any]) -> List[TextContent]:
+    async def handler(arguments: Dict[str, Any]) -> Tuple[List[TextContent], Dict[str, Any]]:
         version: Optional[str] = arguments.get("version") or None
         chunks = search_engine.get_release_notes(product, version)
 
@@ -84,13 +85,22 @@ def build_release_notes_tool(
                     "No release-notes chunks are indexed yet. Call `search_docs` "
                     "once to trigger a crawl, then retry."
                 )
-            return [TextContent(type="text", text=msg)]
+            return respond(msg, {
+                "status": "ok",
+                "tool": "arpe_release_notes",
+                "product": product,
+                "version": version,
+                "count": 0,
+                "chunks": [],
+                "index_ready": bool(search_engine.ready),
+            })
 
         parts: List[str] = [f"# {display} Release Notes"]
         if version:
             parts.append(f"*Filtered to version {version}*")
         parts.append("")
         seen_urls = set()
+        structured_chunks: List[Dict[str, str]] = []
         for chunk in chunks:
             url = chunk.get("url", "")
             if url and url not in seen_urls:
@@ -103,7 +113,16 @@ def build_release_notes_tool(
                 parts.append("")
                 parts.append("---")
                 parts.append("")
+            structured_chunks.append({"url": url, "text": text})
 
-        return [TextContent(type="text", text="\n".join(parts))]
+        return respond("\n".join(parts), {
+            "status": "ok",
+            "tool": "arpe_release_notes",
+            "product": product,
+            "version": version,
+            "count": len(structured_chunks),
+            "chunks": structured_chunks,
+            "index_ready": bool(search_engine.ready),
+        })
 
     return tool, handler

@@ -68,15 +68,18 @@ class TestReleaseNotesTool:
         tool, handler = build_release_notes_tool("fastbcp", engine_with_fastbcp_notes)
         assert tool.name == "fastbcp_release_notes"
         assert tool.annotations.readOnlyHint is True
-        result = await handler({"version": "0.31"})
-        assert result
-        assert "GetSchemaTable" in result[0].text
+        content, structured = await handler({"version": "0.31"})
+        assert "GetSchemaTable" in content[0].text
+        assert structured["status"] == "ok"
+        assert structured["count"] >= 1
+        assert any("GetSchemaTable" in c["text"] for c in structured["chunks"])
 
     @pytest.mark.asyncio
     async def test_tool_handles_missing_version(self, engine_with_fastbcp_notes):
         _, handler = build_release_notes_tool("fastbcp", engine_with_fastbcp_notes)
-        result = await handler({"version": "9.9"})
-        assert "No cached release notes" in result[0].text
+        content, structured = await handler({"version": "9.9"})
+        assert "No cached release notes" in content[0].text
+        assert structured["count"] == 0
 
     @pytest.mark.asyncio
     async def test_tool_handles_no_release_notes_indexed(self):
@@ -93,5 +96,6 @@ class TestReleaseNotesTool:
             ],
         )
         _, handler = build_release_notes_tool("lakexpress", engine)
-        result = await handler({})
-        assert "No release-notes chunks" in result[0].text
+        content, structured = await handler({})
+        assert "No release-notes chunks" in content[0].text
+        assert structured["count"] == 0

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "arpeio-mcp"
-version = "0.3.1"
+version = "0.3.2"
 description = "Unified MCP server for Arpe.io data tools — FastBCP, FastTransfer, LakeXpress, MigratorXpress"
 readme = "README.md"
 license = "MIT"
@@ -37,6 +37,7 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.11.0",
+    "defusedxml>=0.7.1",
 ]
 
 [project.scripts]

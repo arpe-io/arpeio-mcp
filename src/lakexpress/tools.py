@@ -35,9 +35,44 @@ from .command_builder import (
 )
 from .version import check_version_compatibility
 from src.base.error_patterns import diagnose_cli_error
+from src.base.structured import make_output_schema, respond
 
 
 logger = logging.getLogger(__name__)
+
+
+# Structured-output schemas shared by the preview and execute tools. Only `status`
+# is required (see make_output_schema), so success and error payloads both validate.
+PREVIEW_OUTPUT_SCHEMA = make_output_schema({
+    "command": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "Full CLI argv, ready to hand to the execute tool.",
+    },
+    "command_string": {
+        "type": "string",
+        "description": "The argv joined into one command string.",
+    },
+    "command_display": {
+        "type": "string",
+        "description": "The command formatted for display, safe to show the user.",
+    },
+    "explanation": {"type": "string", "description": "Human-readable summary of what the command does."},
+    "warnings": {"type": "array", "items": {"type": "string"}, "description": "Version-compatibility warnings."},
+    "preview_only": {"type": "boolean", "description": "True when no binary is configured (execution unavailable)."},
+    "command_type": {"type": "string", "description": "Which LakeXpress sub-command was built."},
+    "errors": {"type": "array", "items": {"type": "object"}, "description": "Field-level validation errors (status='error')."},
+    "tips": {"type": "array", "items": {"type": "string"}, "description": "Suggested next tool calls to resolve errors."},
+})
+
+EXECUTE_OUTPUT_SCHEMA = make_output_schema({
+    "success": {"type": "boolean", "description": "True when the command exited 0."},
+    "return_code": {"type": "integer", "description": "Process exit code."},
+    "stdout": {"type": "string"},
+    "stderr": {"type": "string"},
+    "diagnostics": {"type": "array", "items": {"type": "string"}, "description": "Parsed hints when the command failed."},
+    "log_dir": {"type": "string"},
+})
 
 
 def _suggest_next_steps(errors: list) -> list[str]:
@@ -75,7 +110,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             name="lakexpress_preview_command",
             description=(
                 "Build and preview a LakeXpress CLI command WITHOUT executing it. "
-                "Call this after lakexpress_suggest_workflow to build each command in the recommended sequence. "
+                "Call this after `lakexpress_info` with action='workflow' to build each command in the recommended sequence. "
                 "Shows the exact command that will be run. "
                 "Does NOT execute the command or validate connections. "
                 "After reviewing, pass the command to lakexpress_execute_command."
@@ -86,6 +121,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                 idempotentHint=True,
                 openWorldHint=False,
             ),
+            outputSchema=PREVIEW_OUTPUT_SCHEMA,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -1065,6 +1101,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                 idempotentHint=False,
                 openWorldHint=True,
             ),
+            outputSchema=EXECUTE_OUTPUT_SCHEMA,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -1132,16 +1169,18 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
     async def handle_preview_command(arguments: Dict[str, Any]) -> list[TextContent]:
         """Handle lakexpress_preview_command tool."""
         if command_builder is None:
-            return [
-                TextContent(
-                    type="text",
-                    text=(
-                        "Error: LakeXpress server failed to initialize.\n"
-                        f"Expected binary location: {binary_path}\n"
-                        "Please set LAKEXPRESS_PATH environment variable correctly."
-                    ),
-                )
-            ]
+            return respond(
+                (
+                    "Error: LakeXpress server failed to initialize.\n"
+                    f"Expected binary location: {binary_path}\n"
+                    "Please set LAKEXPRESS_PATH environment variable correctly."
+                ),
+                {
+                    "status": "error",
+                    "tool": "lakexpress_preview_command",
+                    "error": "LakeXpress server failed to initialize.",
+                },
+            )
 
         try:
             # Extract os_type before passing to LakeXpressRequest (not part of the model)
@@ -1219,7 +1258,17 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                 "```",
             ]
 
-            return [TextContent(type="text", text="\n".join(response))]
+            return respond("\n".join(response), {
+                "status": "ok",
+                "tool": "lakexpress_preview_command",
+                "command": command,
+                "command_string": " ".join(command),
+                "command_display": display_command,
+                "explanation": explanation,
+                "warnings": version_warnings,
+                "preview_only": bool(command_builder.preview_only),
+                "command_type": cmd_type,
+            })
 
         except ValidationError as e:
             error_msg = [
@@ -1228,71 +1277,82 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                 "The provided parameters are invalid:",
                 "",
             ]
+            structured_errors = []
             for error in e.errors():
                 field = " -> ".join(str(x) for x in error["loc"])
                 error_msg.append(f"- **{field}**: {error['msg']}")
+                structured_errors.append({"field": field, "message": error["msg"]})
             tips = _suggest_next_steps(e.errors())
             if tips:
                 error_msg.append("")
                 error_msg.extend(tips)
-            return [TextContent(type="text", text="\n".join(error_msg))]
+            return respond("\n".join(error_msg), {
+                "status": "error",
+                "tool": "lakexpress_preview_command",
+                "errors": structured_errors,
+                "tips": tips,
+            })
 
         except LakeXpressError as e:
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
+            return respond(f"Error: {str(e)}", {
+                "status": "error",
+                "tool": "lakexpress_preview_command",
+                "error": str(e),
+            })
 
     async def handle_execute_command(arguments: Dict[str, Any]) -> list[TextContent]:
         """Handle lakexpress_execute_command tool."""
         if command_builder is None:
-            return [
-                TextContent(
-                    type="text",
-                    text="Error: LakeXpress server failed to initialize. Please check LAKEXPRESS_PATH.",
-                )
-            ]
+            return respond(
+                "Error: LakeXpress server failed to initialize. Please check LAKEXPRESS_PATH.",
+                {"status": "error", "tool": "lakexpress_execute_command",
+                 "error": "LakeXpress server failed to initialize."},
+            )
 
         if command_builder.preview_only:
-            return [
-                TextContent(
-                    type="text",
-                    text=(
-                        "Execution requires the LakeXpress binary. "
-                        "Download from https://arpe.io and set LAKEXPRESS_PATH to enable."
-                    ),
-                )
-            ]
+            return respond(
+                (
+                    "Execution requires the LakeXpress binary. "
+                    "Download from https://arpe.io and set LAKEXPRESS_PATH to enable."
+                ),
+                {"status": "error", "tool": "lakexpress_execute_command",
+                 "error": "Binary not configured (command-builder mode).", "preview_only": True},
+            )
 
         # Check confirmation
         if not arguments.get("confirmation", False):
-            return [
-                TextContent(
-                    type="text",
-                    text=(
-                        "# Execution Blocked\n\n"
-                        "You must set `confirmation: true` to execute a command.\n"
-                        "This safety mechanism ensures commands are only executed with explicit approval.\n\n"
-                        "Please review the command carefully and confirm by setting:\n"
-                        "```json\n"
-                        '{"confirmation": true}\n'
-                        "```"
-                    ),
-                )
-            ]
+            return respond(
+                (
+                    "# Execution Blocked\n\n"
+                    "You must set `confirmation: true` to execute a command.\n"
+                    "This safety mechanism ensures commands are only executed with explicit approval.\n\n"
+                    "Please review the command carefully and confirm by setting:\n"
+                    "```json\n"
+                    '{"confirmation": true}\n'
+                    "```"
+                ),
+                {"status": "error", "tool": "lakexpress_execute_command",
+                 "error": "confirmation=true is required to execute."},
+            )
 
         # Get command
         command_str = arguments.get("command", "")
         if not command_str:
-            return [
-                TextContent(
-                    type="text",
-                    text="Error: No command provided. Please provide the command from lakexpress_preview_command.",
-                )
-            ]
+            return respond(
+                "Error: No command provided. Please provide the command from lakexpress_preview_command.",
+                {"status": "error", "tool": "lakexpress_execute_command",
+                 "error": "No command provided."},
+            )
 
         # Parse command string into list
         try:
             command = shlex.split(command_str)
         except ValueError as e:
-            return [TextContent(type="text", text=f"Error parsing command: {str(e)}")]
+            return respond(
+                f"Error parsing command: {str(e)}",
+                {"status": "error", "tool": "lakexpress_execute_command",
+                 "error": f"Could not parse command: {str(e)}"},
+            )
 
         # Execute
         try:
@@ -1303,13 +1363,14 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
 
             # Format response
             success = return_code == 0
+            log_dir_str = str(log_dir) if log_dir else "(not configured)"
 
             response = [
                 f"# LakeXpress {'Completed' if success else 'Failed'}",
                 "",
                 f"**Status**: {'Success' if success else 'Failed'}",
                 f"**Return Code**: {return_code}",
-                f"**Log Location**: {log_dir}",
+                f"**Log Location**: {log_dir_str}",
                 "",
                 "## Output:",
                 "```",
@@ -1320,6 +1381,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             if stderr:
                 response.extend(["", "## Error Output:", "```", stderr, "```"])
 
+            diagnostics: list[str] = []
             if not success:
                 diagnostics = diagnose_cli_error(stdout or "", stderr or "", return_code)
                 if diagnostics:
@@ -1338,10 +1400,23 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                         ]
                     )
 
-            return [TextContent(type="text", text="\n".join(response))]
+            return respond("\n".join(response), {
+                "status": "ok",
+                "tool": "lakexpress_execute_command",
+                "success": success,
+                "return_code": return_code,
+                "stdout": stdout or "",
+                "stderr": stderr or "",
+                "diagnostics": diagnostics,
+                "log_dir": log_dir_str,
+            })
 
         except LakeXpressError as e:
-            return [TextContent(type="text", text=f"# Execution Failed\n\nError: {str(e)}")]
+            return respond(f"# Execution Failed\n\nError: {str(e)}", {
+                "status": "error",
+                "tool": "lakexpress_execute_command",
+                "error": str(e),
+            })
 
     async def handle_list_capabilities(arguments: Dict[str, Any]) -> list[TextContent]:
         """Handle lakexpress_list_capabilities tool."""

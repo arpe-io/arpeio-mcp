@@ -28,9 +28,44 @@ from .validators import (
 )
 from .version import check_version_compatibility
 from src.base.error_patterns import diagnose_cli_error
+from src.base.structured import make_output_schema, respond
 
 
 logger = logging.getLogger(__name__)
+
+
+# Structured-output schemas shared by the preview and execute tools. Only `status`
+# is required (see make_output_schema), so success and error payloads both validate.
+PREVIEW_OUTPUT_SCHEMA = make_output_schema({
+    "command": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "Full CLI argv with real credentials, ready to hand to the execute tool.",
+    },
+    "command_string": {
+        "type": "string",
+        "description": "The argv joined into one command string (real credentials).",
+    },
+    "command_display": {
+        "type": "string",
+        "description": "The command with passwords masked, safe to show the user.",
+    },
+    "explanation": {"type": "string", "description": "Human-readable summary of what the command does."},
+    "warnings": {"type": "array", "items": {"type": "string"}, "description": "Version-compatibility warnings."},
+    "preview_only": {"type": "boolean", "description": "True when no binary is configured (execution unavailable)."},
+    "auto_parallelism": {"type": "string", "description": "Parallelism method auto-suggested when none was given."},
+    "errors": {"type": "array", "items": {"type": "object"}, "description": "Field-level validation errors (status='error')."},
+    "tips": {"type": "array", "items": {"type": "string"}, "description": "Suggested next tool calls to resolve errors."},
+})
+
+EXECUTE_OUTPUT_SCHEMA = make_output_schema({
+    "success": {"type": "boolean", "description": "True when the command exited 0."},
+    "return_code": {"type": "integer", "description": "Process exit code."},
+    "stdout": {"type": "string"},
+    "stderr": {"type": "string"},
+    "diagnostics": {"type": "array", "items": {"type": "string"}, "description": "Parsed hints when the command failed."},
+    "log_dir": {"type": "string"},
+})
 
 
 def _suggest_next_steps(errors: list) -> list[str]:
@@ -85,6 +120,7 @@ def create_tools(
                 idempotentHint=True,
                 openWorldHint=False,
             ),
+            outputSchema=PREVIEW_OUTPUT_SCHEMA,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -148,7 +184,7 @@ def create_tools(
                             "type": {
                                 "type": "string",
                                 "enum": [e.value for e in TargetConnectionType],
-                                "description": "Target database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL). Use fasttransfer_list_combinations to see valid pairs.",
+                                "description": "Target database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL). Use `fasttransfer_info` with action='combinations' to see valid pairs.",
                             },
                             "server": {
                                 "type": "string",
@@ -189,7 +225,7 @@ def create_tools(
                             "method": {
                                 "type": "string",
                                 "enum": [e.value for e in ParallelismMethod],
-                                "description": "Parallelism method. Ntile: even distribution on numeric key. DataDriven: distinct value partitions, works with any data type. PhysLoc/Physloc: SQL Server physical location (no key needed). Ctid: PostgreSQL physical tuple ID (no key needed). Rowid: Oracle physical ROWID (no key needed). RangeId: numeric min/max range. Random: modulo-based approximate distribution. NZDataSlice: Netezza native slicing. None: single-threaded. Call `fasttransfer_suggest_parallelism` if unsure.",
+                                "description": "Parallelism method. Ntile: even distribution on numeric key. DataDriven: distinct value partitions, works with any data type. PhysLoc/Physloc: SQL Server physical location (no key needed). Ctid: PostgreSQL physical tuple ID (no key needed). Rowid: Oracle physical ROWID (no key needed). RangeId: numeric min/max range. Random: modulo-based approximate distribution. NZDataSlice: Netezza native slicing. None: single-threaded. Call `fasttransfer_info` with action='parallelism' if unsure.",
                                 "default": "None",
                             },
                             "distribute_key_column": {
@@ -266,6 +302,7 @@ def create_tools(
                 idempotentHint=False,
                 openWorldHint=True,
             ),
+            outputSchema=EXECUTE_OUTPUT_SCHEMA,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -345,16 +382,18 @@ def create_tools(
     async def handle_preview_transfer(arguments: Dict[str, Any]) -> list[TextContent]:
         """Handle fasttransfer_preview_transfer tool."""
         if command_builder is None:
-            return [
-                TextContent(
-                    type="text",
-                    text=(
-                        "Error: FastTransfer binary not found or not accessible.\n"
-                        f"Expected location: {config.get('path', '(unknown)')}\n"
-                        "Please set FASTTRANSFER_PATH environment variable correctly."
-                    ),
-                )
-            ]
+            return respond(
+                (
+                    "Error: FastTransfer binary not found or not accessible.\n"
+                    f"Expected location: {config.get('path', '(unknown)')}\n"
+                    "Please set FASTTRANSFER_PATH environment variable correctly."
+                ),
+                {
+                    "status": "error",
+                    "tool": "fasttransfer_preview_transfer",
+                    "error": "FastTransfer binary not found or not accessible.",
+                },
+            )
 
         try:
             # Extract os_type before passing to TransferRequest (not part of the model)
@@ -362,6 +401,7 @@ def create_tools(
 
             # Auto-suggest parallelism if not specified
             auto_parallelism_note = None
+            suggested_method = None
             options = arguments.get("options") or {}
             method = options.get("method", "None")
             if method == "None":
@@ -458,7 +498,17 @@ def create_tools(
                 "```",
             ]
 
-            return [TextContent(type="text", text="\n".join(response))]
+            return respond("\n".join(response), {
+                "status": "ok",
+                "tool": "fasttransfer_preview_transfer",
+                "command": command,
+                "command_string": " ".join(command),
+                "command_display": display_command,
+                "explanation": explanation,
+                "warnings": version_warnings,
+                "preview_only": bool(command_builder.preview_only),
+                **({"auto_parallelism": suggested_method} if auto_parallelism_note else {}),
+            })
 
         except ValidationError as e:
             error_msg = [
@@ -467,71 +517,82 @@ def create_tools(
                 "The provided parameters are invalid:",
                 "",
             ]
+            structured_errors = []
             for error in e.errors():
                 field = " -> ".join(str(x) for x in error["loc"])
                 error_msg.append(f"- **{field}**: {error['msg']}")
+                structured_errors.append({"field": field, "message": error["msg"]})
             tips = _suggest_next_steps(e.errors())
             if tips:
                 error_msg.append("")
                 error_msg.extend(tips)
-            return [TextContent(type="text", text="\n".join(error_msg))]
+            return respond("\n".join(error_msg), {
+                "status": "error",
+                "tool": "fasttransfer_preview_transfer",
+                "errors": structured_errors,
+                "tips": tips,
+            })
 
         except FastTransferError as e:
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
+            return respond(f"Error: {str(e)}", {
+                "status": "error",
+                "tool": "fasttransfer_preview_transfer",
+                "error": str(e),
+            })
 
     async def handle_execute_transfer(arguments: Dict[str, Any]) -> list[TextContent]:
         """Handle fasttransfer_execute_transfer tool."""
         if command_builder is None:
-            return [
-                TextContent(
-                    type="text",
-                    text="Error: FastTransfer binary not found. Please check FASTTRANSFER_PATH.",
-                )
-            ]
+            return respond(
+                "Error: FastTransfer binary not found. Please check FASTTRANSFER_PATH.",
+                {"status": "error", "tool": "fasttransfer_execute_transfer",
+                 "error": "FastTransfer binary not found."},
+            )
 
         if command_builder.preview_only:
-            return [
-                TextContent(
-                    type="text",
-                    text=(
-                        "Execution requires the FastTransfer binary. "
-                        "Download from https://arpe.io and set FASTTRANSFER_PATH to enable."
-                    ),
-                )
-            ]
+            return respond(
+                (
+                    "Execution requires the FastTransfer binary. "
+                    "Download from https://arpe.io and set FASTTRANSFER_PATH to enable."
+                ),
+                {"status": "error", "tool": "fasttransfer_execute_transfer",
+                 "error": "Binary not configured (command-builder mode).", "preview_only": True},
+            )
 
         # Check confirmation
         if not arguments.get("confirmation", False):
-            return [
-                TextContent(
-                    type="text",
-                    text=(
-                        "# Execution Blocked\n\n"
-                        "You must set `confirmation: true` to execute a transfer.\n"
-                        "This safety mechanism ensures commands are only executed with explicit approval.\n\n"
-                        "Please review the command carefully and confirm by setting:\n"
-                        "```json\n"
-                        '{"confirmation": true}\n'
-                        "```"
-                    ),
-                )
-            ]
+            return respond(
+                (
+                    "# Execution Blocked\n\n"
+                    "You must set `confirmation: true` to execute a transfer.\n"
+                    "This safety mechanism ensures commands are only executed with explicit approval.\n\n"
+                    "Please review the command carefully and confirm by setting:\n"
+                    "```json\n"
+                    '{"confirmation": true}\n'
+                    "```"
+                ),
+                {"status": "error", "tool": "fasttransfer_execute_transfer",
+                 "error": "confirmation=true is required to execute."},
+            )
 
         # Get command
         command_str = arguments.get("command", "")
         if not command_str:
-            return [
-                TextContent(
-                    type="text",
-                    text="Error: No command provided. Please provide the command from fasttransfer_preview_transfer.",
-                )
-            ]
+            return respond(
+                "Error: No command provided. Please provide the command from fasttransfer_preview_transfer.",
+                {"status": "error", "tool": "fasttransfer_execute_transfer",
+                 "error": "No command provided."},
+            )
 
         # Parse command string into list
         try:
             command = shlex.split(command_str)
         except ValueError as e:
-            return [TextContent(type="text", text=f"Error parsing command: {str(e)}")]
+            return respond(
+                f"Error parsing command: {str(e)}",
+                {"status": "error", "tool": "fasttransfer_execute_transfer",
+                 "error": f"Could not parse command: {str(e)}"},
+            )
 
         # Execute
         try:
@@ -543,13 +604,14 @@ def create_tools(
             # Format response
             success = return_code == 0
             status = "Success" if success else "Failed"
+            log_dir_str = str(log_dir) if log_dir else "(not configured)"
 
             response = [
                 f"# FastTransfer Execution - {status}",
                 "",
                 f"**Status**: {status}",
                 f"**Return Code**: {return_code}",
-                f"**Log Location**: {log_dir}",
+                f"**Log Location**: {log_dir_str}",
                 "",
                 "## Output:",
                 "```",
@@ -560,6 +622,7 @@ def create_tools(
             if stderr:
                 response.extend(["", "## Error Output:", "```", stderr, "```"])
 
+            diagnostics: list[str] = []
             if not success:
                 diagnostics = diagnose_cli_error(stdout or "", stderr or "", return_code)
                 if diagnostics:
@@ -578,10 +641,23 @@ def create_tools(
                         ]
                     )
 
-            return [TextContent(type="text", text="\n".join(response))]
+            return respond("\n".join(response), {
+                "status": "ok",
+                "tool": "fasttransfer_execute_transfer",
+                "success": success,
+                "return_code": return_code,
+                "stdout": stdout or "",
+                "stderr": stderr or "",
+                "diagnostics": diagnostics,
+                "log_dir": log_dir_str,
+            })
 
         except FastTransferError as e:
-            return [TextContent(type="text", text=f"# Execution Failed\n\nError: {str(e)}")]
+            return respond(f"# Execution Failed\n\nError: {str(e)}", {
+                "status": "error",
+                "tool": "fasttransfer_execute_transfer",
+                "error": str(e),
+            })
 
     async def handle_validate_connection(arguments: Dict[str, Any]) -> list[TextContent]:
         """Handle fasttransfer_validate_connection tool."""
@@ -834,7 +910,7 @@ def create_tools(
         }
 
         db_tip = db_tips.get(source_type, (
-            "- Call `fasttransfer_suggest_parallelism` with your table characteristics for a specific recommendation"
+            "- Call `fasttransfer_info` with action='parallelism' with your table characteristics for a specific recommendation"
         ))
 
         # Size-specific tips
@@ -863,19 +939,16 @@ def create_tools(
             "## Step-by-Step",
             "",
             "### 1. Discover supported combinations",
-            f"Call `fasttransfer_list_combinations` to confirm `{source_type}` → `{target_type}` is supported.",
+            f"Call `fasttransfer_info` with action='combinations' to confirm `{source_type}` → `{target_type}` is supported.",
             "",
             "### 2. Choose parallelism method",
-            "Call `fasttransfer_suggest_parallelism` with your table characteristics.",
+            "Call `fasttransfer_info` with action='parallelism' with your table characteristics.",
             "",
             db_tip,
             size_tip,
             "",
-            "### 3. Validate connections",
-            "Call `fasttransfer_validate_connection` for both source and target.",
-            "",
-            "### 4. Preview the command",
-            "Call `fasttransfer_preview_transfer` with your source, target, and options.",
+            "### 3. Preview the command",
+            "Call `fasttransfer_preview_transfer` with your source, target, and options. It validates both source and target parameters while building the command.",
             "",
         ]
 
@@ -885,7 +958,7 @@ def create_tools(
             response.append("")
 
         response.extend([
-            "### 5. Execute",
+            "### 4. Execute",
             "Call `fasttransfer_execute_transfer` with the command from the preview.",
         ])
 
@@ -925,7 +998,9 @@ def create_tools(
                 return None
         except Exception as e:
             logger.exception(f"Error handling tool '{name}': {e}")
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
+            # Return structured content so tools that declare an outputSchema
+            # (preview/execute) still satisfy it on an unexpected error.
+            return respond(f"Error: {str(e)}", {"status": "error", "tool": name, "error": str(e)})
 
     return tools, handle_call
 

@@ -7,9 +7,30 @@ from typing import Any, Callable, Dict, List, Tuple
 
 from mcp.types import Tool, ToolAnnotations, TextContent
 
+from src.base.structured import make_output_schema, respond
 from .index import SearchEngine
 
 logger = logging.getLogger(__name__)
+
+
+SEARCH_OUTPUT_SCHEMA = make_output_schema({
+    "query": {"type": "string", "description": "The search query that was run."},
+    "count": {"type": "integer", "description": "Number of results returned."},
+    "results": {
+        "type": "array",
+        "description": "Ranked documentation/blog chunks.",
+        "items": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string"},
+                "url": {"type": "string"},
+                "text": {"type": "string"},
+            },
+        },
+    },
+    "index_ready": {"type": "boolean", "description": "False while indexes are still loading."},
+    "fully_loaded": {"type": "boolean", "description": "False while some sources are still loading."},
+})
 
 
 def create_tools(search_engine: SearchEngine) -> Tuple[List[Tool], Callable]:
@@ -38,6 +59,7 @@ def create_tools(search_engine: SearchEngine) -> Tuple[List[Tool], Callable]:
                 idempotentHint=True,
                 openWorldHint=True,
             ),
+            outputSchema=SEARCH_OUTPUT_SCHEMA,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -64,16 +86,17 @@ def create_tools(search_engine: SearchEngine) -> Tuple[List[Tool], Callable]:
             return None
         return await handle_search_docs(arguments)
 
-    async def handle_search_docs(arguments: Dict[str, Any]) -> List[TextContent]:
+    async def handle_search_docs(arguments: Dict[str, Any]):
         """Handle search_docs tool calls."""
         question = arguments.get("question", "")
         top_k = min(max(arguments.get("top_k", 5), 1), 10)
 
         if not question.strip():
-            return [TextContent(
-                type="text",
-                text="Error: Please provide a search question or keywords.",
-            )]
+            return respond(
+                "Error: Please provide a search question or keywords.",
+                {"status": "error", "tool": "search_docs",
+                 "error": "Empty query.", "query": question, "count": 0, "results": []},
+            )
 
         results = search_engine.search(question, top_k=top_k)
 
@@ -89,7 +112,15 @@ def create_tools(search_engine: SearchEngine) -> Tuple[List[Tool], Callable]:
                     f"No results found for: \"{question}\"\n\n"
                     "Try different keywords or check the arpe.io documentation directly."
                 )
-            return [TextContent(type="text", text="\n".join(parts))]
+            return respond("\n".join(parts), {
+                "status": "ok",
+                "tool": "search_docs",
+                "query": question,
+                "count": 0,
+                "results": [],
+                "index_ready": bool(search_engine.ready),
+                "fully_loaded": bool(search_engine.fully_loaded),
+            })
 
         # Format results
         parts = [f"# Documentation Search: \"{question}\"", ""]
@@ -98,12 +129,15 @@ def create_tools(search_engine: SearchEngine) -> Tuple[List[Tool], Callable]:
             parts.append("*Note: Some documentation sources are still loading.*")
             parts.append("")
 
+        structured_results = []
         for i, result in enumerate(results, 1):
             source = result.get("source", "Unknown")
             url = result.get("url", "")
             text = result.get("text", "")
 
-            # Truncate long chunks
+            structured_results.append({"source": source, "url": url, "text": text})
+
+            # Truncate long chunks (display only; structured keeps the full text)
             if len(text) > 800:
                 text = text[:800] + "..."
 
@@ -116,6 +150,14 @@ def create_tools(search_engine: SearchEngine) -> Tuple[List[Tool], Callable]:
             parts.append("---")
             parts.append("")
 
-        return [TextContent(type="text", text="\n".join(parts))]
+        return respond("\n".join(parts), {
+            "status": "ok",
+            "tool": "search_docs",
+            "query": question,
+            "count": len(structured_results),
+            "results": structured_results,
+            "index_ready": bool(search_engine.ready),
+            "fully_loaded": bool(search_engine.fully_loaded),
+        })
 
     return tools, handle_call
