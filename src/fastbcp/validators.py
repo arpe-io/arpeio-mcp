@@ -86,20 +86,6 @@ class LogLevel(str, Enum):
     DEBUG = "Debug"
 
 
-class LoadMode(str, Enum):
-    """Load mode for export."""
-
-    APPEND = "Append"
-    TRUNCATE = "Truncate"
-
-
-class MapMethod(str, Enum):
-    """Column mapping method."""
-
-    POSITION = "Position"  # Map by position
-    NAME = "Name"  # Map by name (case-insensitive)
-
-
 class DecimalSeparator(str, Enum):
     """Decimal separator for numeric output."""
 
@@ -213,9 +199,6 @@ class OutputConfig(BaseModel):
     format: OutputFormat = Field(..., description="Output file format")
     file_output: Optional[str] = Field(None, description="Output file path")
     directory: Optional[str] = Field(None, description="Output directory path")
-    storage_target: StorageTarget = Field(
-        StorageTarget.LOCAL, description="Storage target for output"
-    )
     delimiter: Optional[str] = Field(None, description="Field delimiter (CSV/TSV)")
     quotes: Optional[str] = Field(None, description="Quote character")
     encoding: Optional[str] = Field(None, description="Output file encoding")
@@ -274,15 +257,6 @@ class ExportOptions(BaseModel):
     degree: int = Field(
         1,
         description="Parallelism degree: number of parallel workers",
-    )
-    load_mode: LoadMode = Field(
-        LoadMode.APPEND, description="Load mode: Append or Truncate"
-    )
-    batch_size: Optional[int] = Field(
-        None, ge=1, description="Batch size for export operations"
-    )
-    map_method: MapMethod = Field(
-        MapMethod.POSITION, description="Column mapping method: Position or Name"
     )
     run_id: Optional[str] = Field(
         None, description="Run ID for logging and tracking purposes"

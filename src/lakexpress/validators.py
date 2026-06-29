@@ -104,7 +104,6 @@ class ErrorAction(str, Enum):
 
     FAIL = "fail"
     CONTINUE = "continue"
-    SKIP = "skip"
 
 
 class LogLevel(str, Enum):
@@ -279,7 +278,7 @@ class ConfigCreateParams(GlobalOptions):
         None, description="Custom sync ID (1-64 chars, alphanumeric/underscore/hyphen)"
     )
     error_action: Optional[ErrorAction] = Field(
-        None, description="Action on error: fail, continue, or skip"
+        None, description="Action on error: fail or continue"
     )
     env_name: Optional[str] = Field(
         None, description="Environment name for configuration isolation"

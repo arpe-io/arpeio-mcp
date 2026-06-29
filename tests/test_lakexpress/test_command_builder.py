@@ -350,6 +350,26 @@ class TestCommandBuilder:
 
         assert "--quiet_fbcp" in command
 
+    def test_build_sync_does_not_emit_env_name(self, command_builder):
+        """sync does not accept --env_name (only config create/list do)."""
+        request = LakeXpressRequest(
+            command=CommandType.SYNC,
+            sync={"sync_id": "my-sync", "env_name": "production"},
+        )
+        command = command_builder.build_command(request)
+
+        assert "--env_name" not in command
+
+    def test_build_run_does_not_emit_env_name(self, command_builder):
+        """run does not accept --env_name (only config create/list do)."""
+        request = LakeXpressRequest(
+            command=CommandType.RUN,
+            run={"config": "config.yaml", "env_name": "production"},
+        )
+        command = command_builder.build_command(request)
+
+        assert "--env_name" not in command
+
     def test_build_sync_export(self, command_builder):
         """Test building sync[export] command."""
         request = LakeXpressRequest(

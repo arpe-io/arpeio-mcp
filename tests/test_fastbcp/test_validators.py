@@ -10,8 +10,6 @@ from src.fastbcp.validators import (
     StorageTarget,
     ParquetCompression,
     LogLevel,
-    LoadMode,
-    MapMethod,
     DecimalSeparator,
     ApplicationIntent,
     BoolFormat,
@@ -356,14 +354,6 @@ class TestOutputConfig:
         )
         assert config.no_header is True
 
-    def test_storage_target_default_local(self):
-        """Test storage target defaults to local."""
-        config = OutputConfig(
-            format=OutputFormat.CSV,
-            file_output="/tmp/output.csv",
-        )
-        assert config.storage_target == StorageTarget.LOCAL
-
 
 class TestExportOptions:
     """Tests for ExportOptions model."""
@@ -373,8 +363,6 @@ class TestExportOptions:
         options = ExportOptions()
         assert options.method == ParallelismMethod.NONE
         assert options.degree == 1
-        assert options.load_mode == LoadMode.APPEND
-        assert options.map_method == MapMethod.POSITION
 
     def test_data_driven_requires_distribute_key(self):
         """Test that DataDriven method requires distribute_key_column."""
@@ -410,14 +398,6 @@ class TestExportOptions:
         options = ExportOptions(method=ParallelismMethod.CTID)
         assert options.method == ParallelismMethod.CTID
         assert options.distribute_key_column is None
-
-    def test_batch_size_validation(self):
-        """Test batch size must be positive."""
-        with pytest.raises(ValidationError):
-            ExportOptions(batch_size=0)
-
-        options = ExportOptions(batch_size=10000)
-        assert options.batch_size == 10000
 
     def test_data_driven_query_only_with_datadriven(self):
         """Test data_driven_query requires DataDriven method."""

@@ -141,18 +141,18 @@ class CommandBuilder(BaseCommandBuilder):
         """Build output file parameters."""
         params = []
 
-        # Output format
-        params.extend(["--format", output.format.value])
-
-        # File output or directory
-        if output.file_output:
-            params.extend(["--fileoutput", output.file_output])
+        # File output drives the format: FastBCP infers the output format from
+        # the --fileoutput extension and has no --format flag. Synthesize a
+        # filename when only a directory is given so the chosen format is still
+        # expressed via its extension.
+        file_output = output.file_output or f"output.{output.format.value}"
+        params.extend(["--fileoutput", file_output])
         if output.directory:
             params.extend(["--directory", output.directory])
 
-        # Storage target (only if not local)
-        if output.storage_target.value != "local":
-            params.extend(["--storagetarget", output.storage_target.value])
+        # Cloud output is selected by a cloud --directory path together with
+        # --cloudprofile (emitted from the options); FastBCP has no
+        # --storagetarget flag.
 
         # Delimiter
         if output.delimiter:
@@ -209,25 +209,18 @@ class CommandBuilder(BaseCommandBuilder):
                 # Timepartition uses a special tuple format: (datecolumn, year, month)
                 col = options.distribute_key_column
                 params.extend(
-                    ["--distributeKeyColumn", f"({col}, year, month)"]
+                    ["--distributekeycolumn", f"({col}, year, month)"]
                 )
             else:
                 params.extend(
-                    ["--distributeKeyColumn", options.distribute_key_column]
+                    ["--distributekeycolumn", options.distribute_key_column]
                 )
 
         # Degree of parallelism
         params.extend(["--degree", str(options.degree)])
 
-        # Load mode
-        params.extend(["--loadmode", options.load_mode.value])
-
-        # Batch size
-        if options.batch_size:
-            params.extend(["--batchsize", str(options.batch_size)])
-
-        # Map method
-        params.extend(["--mapmethod", options.map_method.value])
+        # Note: FastBCP (unlike FastTransfer) has no --loadmode, --batchsize or
+        # --mapmethod flags. They are intentionally not emitted here.
 
         # Run ID
         if options.run_id:

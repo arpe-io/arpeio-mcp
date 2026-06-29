@@ -64,8 +64,6 @@ def sample_request():
         options={
             "method": "Ctid",
             "degree": 4,
-            "load_mode": "Truncate",
-            "map_method": "Position",
         },
     )
 
@@ -158,19 +156,18 @@ class TestCommandBuilder:
         assert "--sourcetable" in command
         assert "users" in command
 
-        # Check output parameters
-        assert "--format" in command
-        assert "csv" in command
+        # Check output parameters. FastBCP has no --format flag; the format is
+        # carried by the --fileoutput extension.
+        assert "--format" not in command
         assert "--fileoutput" in command
         assert "/tmp/users.csv" in command
 
-        # Check options
+        # Check options. FastBCP has no --loadmode flag.
         assert "--method" in command
         assert "Ctid" in command
         assert "--degree" in command
         assert "4" in command
-        assert "--loadmode" in command
-        assert "Truncate" in command
+        assert "--loadmode" not in command
 
     def test_build_command_with_query(self, command_builder):
         """Test building command with query instead of table."""
@@ -218,8 +215,8 @@ class TestCommandBuilder:
         idx = command.index("--directory")
         assert command[idx + 1] == "/tmp/output/"
 
-    def test_build_command_with_storage_target(self, command_builder):
-        """Test building command with S3 storage target and cloud profile."""
+    def test_build_command_cloud_directory(self, command_builder):
+        """Cloud output is conveyed by a cloud directory URL plus --cloudprofile."""
         request = ExportRequest(
             source={
                 "type": "pgsql",
@@ -232,7 +229,6 @@ class TestCommandBuilder:
             output={
                 "format": "parquet",
                 "directory": "s3://my-bucket/exports/",
-                "storage_target": "s3",
             },
             options={
                 "cloud_profile": "my-aws-profile",
@@ -240,8 +236,11 @@ class TestCommandBuilder:
         )
 
         command = command_builder.build_command(request)
-        assert "--storagetarget" in command
-        assert "s3" in command
+        # FastBCP has no --storagetarget flag: the cloud target is conveyed by
+        # the cloud --directory path plus --cloudprofile.
+        assert "--storagetarget" not in command
+        assert "--directory" in command
+        assert "s3://my-bucket/exports/" in command
         assert "--cloudprofile" in command
         assert "my-aws-profile" in command
 
@@ -530,9 +529,6 @@ class TestCommandBuilder:
                 "method": "RangeId",
                 "distribute_key_column": "id",
                 "degree": 8,
-                "load_mode": "Append",
-                "batch_size": 50000,
-                "map_method": "Name",
                 "run_id": "test-run-001",
                 "settings_file": "/path/to/settings.json",
                 "log_level": "Debug",
@@ -543,12 +539,11 @@ class TestCommandBuilder:
 
         command = command_builder.build_command(request)
 
-        assert "--distributeKeyColumn" in command
+        assert "--distributekeycolumn" in command
         assert "id" in command
-        assert "--batchsize" in command
-        assert "50000" in command
-        assert "--mapmethod" in command
-        assert "Name" in command
+        # FastBCP has no --batchsize or --mapmethod flags (those are FastTransfer).
+        assert "--batchsize" not in command
+        assert "--mapmethod" not in command
         assert "--runid" in command
         assert "test-run-001" in command
         assert "--settingsfile" in command

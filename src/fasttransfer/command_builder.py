@@ -151,9 +151,10 @@ class CommandBuilder(BaseCommandBuilder):
         # Parallelism method
         params.extend(["--method", options.method.value])
 
-        # Distribute key column
+        # Distribute key column. Use the documented lowercase spelling
+        # (--distributekeycolumn); the binary also accepts the camelCase alias.
         if options.distribute_key_column:
-            params.extend(["--distributeKeyColumn", options.distribute_key_column])
+            params.extend(["--distributekeycolumn", options.distribute_key_column])
 
         # Degree of parallelism
         params.extend(["--degree", str(options.degree)])

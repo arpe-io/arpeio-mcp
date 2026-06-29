@@ -145,12 +145,11 @@ class TestOtherEnums:
         assert CompressionType("Lz4") == CompressionType.LZ4
         assert CompressionType("None") == CompressionType.NONE
 
-    def test_all_3_error_actions(self):
-        """Test error action values."""
-        assert len(ErrorAction) == 3
+    def test_all_error_actions(self):
+        """Test error action values match the CLI choices (fail, continue)."""
+        assert len(ErrorAction) == 2
         assert ErrorAction("fail") == ErrorAction.FAIL
         assert ErrorAction("continue") == ErrorAction.CONTINUE
-        assert ErrorAction("skip") == ErrorAction.SKIP
 
     def test_all_4_log_levels(self):
         """Test all 4 log level values exist."""

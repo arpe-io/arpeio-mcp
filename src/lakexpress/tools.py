@@ -673,7 +673,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                             "error_action": {
                                 "type": "string",
                                 "enum": [e.value for e in ErrorAction],
-                                "description": "Action on table export error: fail (stop), continue (skip and continue), skip",
+                                "description": "Action on table export error: fail (stop on first error) or continue (log errors and continue)",
                             },
                             "env_name": {
                                 "type": "string",

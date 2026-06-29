@@ -395,7 +395,7 @@ class TestCommandBuilder:
         command = command_builder.build_command(request)
 
         # Check all optional parameters
-        assert "--distributeKeyColumn" in command
+        assert "--distributekeycolumn" in command
         assert "id" in command
         assert "--batchsize" in command
         assert "50000" in command

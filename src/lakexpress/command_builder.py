@@ -181,8 +181,11 @@ class CommandBuilder(BaseCommandBuilder):
             args.append("--no_banner")
         if getattr(params, "license", None):
             args.extend(["--license", params.license])
-        if getattr(params, "env_name", None):
-            args.extend(["--env_name", params.env_name])
+        # NOTE: --env_name is NOT a valid flag for sync/sync[export]/sync[publish]/run.
+        # The real lxpress CLI defines --env_name only on `config create` and
+        # `config list` (verified against LakeXpress 0.3.5 --help and cli.py source:
+        # add_common_args, which feeds these commands, has no --env_name).
+        # It is emitted separately in _build_config_create / _build_config_list.
         return args
 
     def _build_logdb_init(self, params: LogdbInitParams) -> List[str]:

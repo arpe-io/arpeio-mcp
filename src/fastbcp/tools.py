@@ -22,8 +22,6 @@ from .validators import (
     ParallelismMethod,
     StorageTarget,
     ParquetCompression,
-    LoadMode,
-    MapMethod,
     LogLevel,
     DecimalSeparator,
     ApplicationIntent,
@@ -117,16 +115,6 @@ def _build_export_explanation(request: ExportRequest) -> str:
     output = request.output
     dest = output.file_output or output.directory or "(not specified)"
     parts.append(f"Export to {output.format.value.upper()} format: {dest}")
-
-    # Storage target
-    if output.storage_target.value != "local":
-        parts.append(f"Storage target: {output.storage_target.value}")
-
-    # Load mode
-    if request.options.load_mode.value == "Truncate":
-        parts.append("Mode: TRUNCATE before export")
-    else:
-        parts.append("Mode: APPEND to existing output")
 
     # Parallelism
     if request.options.method.value != "None":
@@ -259,12 +247,6 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                                 "type": "string",
                                 "description": "Output directory path",
                             },
-                            "storage_target": {
-                                "type": "string",
-                                "enum": [e.value for e in StorageTarget],
-                                "description": "Where to write output files. local: local filesystem. s3/s3compatible: Amazon S3 or compatible. azure_blob/azure_datalake: Azure storage. fabric_onelake: Microsoft Fabric. gcs: Google Cloud Storage. Cloud targets require a cloud_profile.",
-                                "default": "local",
-                            },
                             "delimiter": {
                                 "type": "string",
                                 "description": "Field delimiter (CSV/TSV)",
@@ -331,22 +313,6 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                                 "type": "integer",
                                 "description": "Parallelism degree. 0 = use all CPU cores. Positive integer = exact thread count. Negative integer = cores / abs(value), e.g. -2 on 16 cores = 8 threads. Default 1 = single-threaded.",
                                 "default": 1,
-                            },
-                            "load_mode": {
-                                "type": "string",
-                                "enum": [e.value for e in LoadMode],
-                                "description": "How to handle existing output. Append: add to existing files. Truncate: overwrite existing output before writing.",
-                                "default": "Append",
-                            },
-                            "batch_size": {
-                                "type": "integer",
-                                "description": "Batch size for export operations",
-                            },
-                            "map_method": {
-                                "type": "string",
-                                "enum": [e.value for e in MapMethod],
-                                "description": "Column mapping method",
-                                "default": "Position",
                             },
                             "run_id": {
                                 "type": "string",
