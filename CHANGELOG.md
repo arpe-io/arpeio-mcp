@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.3] - 2026-06-29
+
+### Fixed
+
+- **FastBCP command builder emitted flags the binary does not support**, producing invalid commands. The builder had been copied from FastTransfer and carried over flags that do not exist in FastBCP. Validated every emitted flag against the real FastBCP binary `--help` and source:
+  - Dropped `--format` — FastBCP infers the output format from the `--fileoutput` extension; the builder now always emits `--fileoutput` so the chosen format is expressed.
+  - Dropped `--storagetarget` — cloud output is driven by a cloud `--directory` URL plus `--cloudprofile`.
+  - Dropped `--loadmode`, `--batchsize`, `--mapmethod` — these are FastTransfer-only flags.
+  - Use the documented lowercase `--distributekeycolumn` (FastBCP rejects the camelCase form).
+- **LakeXpress emitted `--env_name` on `sync`/`run`**, which the CLI rejects (`unrecognized arguments`). It is only valid on `config create` / `config list`, where it is still emitted.
+
+### Changed
+
+- **FastBCP tool schema** no longer advertises `load_mode`, `map_method`, `batch_size`, or `storage_target` as settable export options — they had no effect on the generated command. Removed the `LoadMode`/`MapMethod` enums; kept `StorageTarget` and `caps.storage_targets`, which back the read-only `fastbcp_info` workflow guidance and version capabilities.
+- **FastTransfer command builder** normalized `--distributeKeyColumn` to the documented lowercase `--distributekeycolumn` (the binary accepts both as aliases; no behavior change). All other FastTransfer flags were verified correct.
+- **MigratorXpress** verified against the real CLI — no changes needed.
+
+### Notes
+
+- All four command builders are now aligned with their respective real CLIs, each verified against the actual binary `--help`/source rather than by analogy. Full test suite: 595 passed.
+
 ## [0.3.2] - 2026-06-07
 
 ### Added
