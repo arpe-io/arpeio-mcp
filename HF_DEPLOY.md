@@ -38,11 +38,11 @@ That single push triggers a Space rebuild. Build progress and logs:
 After the build finishes (1-3 min):
 
 ```
-curl -s https://arpe-io-arpeio-mcp.hf.space/health
+curl -s https://arpe-io-arpeio-mcp.hf.space/
 curl -s https://arpe-io-arpeio-mcp.hf.space/debug | jq '.tools_count'
 ```
 
-`/health` returns `{"status":"ok"}`; `/debug` exposes `tools_count` and
+The root `/` returns `{"status":"ok"}`; `/debug` exposes `tools_count` and
 `tool_names` from `app.py`.
 
 ## If the remote is missing on a fresh clone
