@@ -465,3 +465,67 @@ class TestCheckVersionCompatibility:
         assert "--lxdb_auth_id" in warnings[0]
         assert "--sync_id" not in warnings[0]
         assert "auth_file" not in warnings[0]
+
+
+class TestRegistry045To0410:
+    """Registry entries for LakeXpress 0.4.5 - 0.4.10 (0.4.6 was never tagged)."""
+
+    RELEASED = ["0.4.5", "0.4.7", "0.4.8", "0.4.9", "0.4.10"]
+
+    @pytest.mark.parametrize("version", RELEASED)
+    def test_released_versions_registered(self, version):
+        """Every released 0.4.5+ version has a registry entry."""
+        assert version in VERSION_REGISTRY
+
+    def test_046_not_registered(self):
+        """0.4.6 was rolled into 0.4.7 and never released."""
+        assert "0.4.6" not in VERSION_REGISTRY
+
+    @pytest.mark.parametrize("version", RELEASED)
+    def test_no_cli_surface_change_vs_044(self, version):
+        """0.4.5 - 0.4.10 add no CLI surface: capabilities match 0.4.4."""
+        assert VERSION_REGISTRY[version] == VERSION_REGISTRY["0.4.4"]
+        assert VERSION_REGISTRY[version].supports_sync_registry is False
+
+    @patch("src.base.version_detector.subprocess.run")
+    def test_0410_is_latest_known(self, mock_run):
+        """0.4.10 sorts numerically after 0.4.9 and resolves to its own entry."""
+        mock_result = Mock()
+        mock_result.stdout = "LakeXpress 0.4.10 (build 2026-09-24T12:00:00Z)\n"
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        detector = VersionDetector(
+            "/fake/binary",
+            VERSION_REGISTRY,
+            r"LakeXpress\s+(\d+\.\d+\.\d+)",
+            "LakeXpress",
+        )
+        assert detector.detect() == ToolVersion(parts=(0, 4, 10))
+        assert detector._sorted_versions[-1][0] == ToolVersion(parts=(0, 4, 10))
+        assert detector.capabilities is VERSION_REGISTRY["0.4.10"]
+
+    @pytest.mark.parametrize(
+        "output,expected",
+        [
+            # 0.4.9+ appends the build date to --version
+            ("LakeXpress 0.4.9 (build 2026-09-24T10:00:00Z)\n", (0, 4, 9)),
+            # 0.4.9 binaries mis-reported a setuptools_scm dev version
+            ("LakeXpress 0.4.9.post1.dev0+gabc1234.d20260924\n", (0, 4, 9)),
+        ],
+    )
+    @patch("src.base.version_detector.subprocess.run")
+    def test_detect_new_version_output_formats(self, mock_run, output, expected):
+        """The detector regex handles the 0.4.9+ --version output formats."""
+        mock_result = Mock()
+        mock_result.stdout = output
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        detector = VersionDetector(
+            "/fake/binary",
+            VERSION_REGISTRY,
+            r"LakeXpress\s+(\d+\.\d+\.\d+)",
+            "LakeXpress",
+        )
+        assert detector.detect() == ToolVersion(parts=expected)

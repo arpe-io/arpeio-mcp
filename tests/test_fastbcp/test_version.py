@@ -211,7 +211,7 @@ class TestVersionDetector:
     def test_capabilities_newer_unknown_version(self, mock_run):
         """Test capabilities falls back to latest known for newer unknown version."""
         mock_result = Mock()
-        mock_result.stdout = "FastBCP Version 1.0.0.0\n"
+        mock_result.stdout = "FastBCP Version 9.0.0.0\n"
         mock_result.stderr = ""
         mock_run.return_value = mock_result
 
@@ -225,7 +225,25 @@ class TestVersionDetector:
         caps = detector.capabilities
 
         # Should get the latest known capabilities
-        assert caps == VERSION_REGISTRY["0.31.0.0"]
+        assert caps == VERSION_REGISTRY["1.2.0.0"]
+
+    @patch("src.base.version_detector.subprocess.run")
+    def test_capabilities_patch_version_resolves_to_minor(self, mock_run):
+        """A 1.1.x patch release resolves to the 1.1.0.0 entry (no adbc_oracle)."""
+        mock_result = Mock()
+        mock_result.stdout = "FastBCP Version 1.1.4.0\n"
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        detector = VersionDetector(
+            "/fake/binary",
+            VERSION_REGISTRY,
+            r"FastBCP\s+Version\s+(\d+\.\d+\.\d+\.\d+)",
+            "FastBCP",
+        )
+        detector.detect()
+        assert detector.capabilities == VERSION_REGISTRY["1.1.0.0"]
+        assert "adbc_oracle" not in detector.capabilities.source_types
 
     @patch("src.base.version_detector.subprocess.run")
     def test_capabilities_undetected_version(self, mock_run):
@@ -242,7 +260,7 @@ class TestVersionDetector:
         caps = detector.capabilities
 
         # Should fall back to latest known
-        assert caps == VERSION_REGISTRY["0.31.0.0"]
+        assert caps == VERSION_REGISTRY["1.2.0.0"]
 
     def test_registry_0291_source_completeness(self):
         """Test that 0.29.1.0 registry has all expected source types."""
@@ -339,3 +357,47 @@ class TestCheckVersionCompatibility:
             {"source": {"type": "pgsql"}}, caps, None
         )
         assert warnings == []
+
+
+class TestAdbcVersionGating:
+    """ADBC connection types were added one per FastBCP release."""
+
+    @pytest.mark.parametrize(
+        "version,expected",
+        [
+            ("0.32.4.0", set()),
+            ("1.0.0.0", {"adbc_mssql"}),
+            ("1.1.0.0", {"adbc_mssql", "adbc_pgsql"}),
+            ("1.2.0.0", {"adbc_mssql", "adbc_pgsql", "adbc_oracle"}),
+        ],
+    )
+    def test_registry_adbc_types(self, version, expected):
+        caps = VERSION_REGISTRY[version]
+        assert {t for t in caps.source_types if t.startswith("adbc_")} == expected
+
+    def test_adbc_oracle_on_1_1_warns(self):
+        caps = VERSION_REGISTRY["1.1.0.0"]
+        warnings = check_version_compatibility(
+            {"source": {"type": "adbc_oracle"}}, caps, ToolVersion(parts=(1, 1, 4, 0))
+        )
+        assert len(warnings) == 1
+        assert "1.2.0.0+" in warnings[0]
+        assert "1.1.4.0" in warnings[0]
+
+    def test_adbc_mssql_on_0_32_warns(self):
+        caps = VERSION_REGISTRY["0.32.4.0"]
+        warnings = check_version_compatibility(
+            {"source": {"type": "adbc_mssql"}}, caps, ToolVersion(parts=(0, 32, 4, 0))
+        )
+        assert warnings and "1.0.0.0+" in warnings[0]
+
+    def test_adbc_oracle_on_1_2_no_warning(self):
+        caps = VERSION_REGISTRY["1.2.0.0"]
+        warnings = check_version_compatibility(
+            {"source": {"type": "adbc_oracle"}}, caps, ToolVersion(parts=(1, 2, 0, 0))
+        )
+        assert warnings == []
+
+    def test_latest_registry_entry_is_1_2(self):
+        latest = max(VERSION_REGISTRY, key=lambda v: tuple(int(x) for x in v.split(".")))
+        assert latest == "1.2.0.0"

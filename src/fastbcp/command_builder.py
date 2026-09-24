@@ -15,6 +15,7 @@ from .validators import (
     ExportRequest,
     SourceConnectionConfig,
     OutputConfig,
+    native_source_type,
 )
 from .version import VERSION_REGISTRY
 
@@ -334,6 +335,9 @@ def get_supported_formats() -> Dict[str, Any]:
                 "xlsx",
                 "binary",
             ],
+            "ADBC (adbc_mssql 1.0+, adbc_pgsql 1.1+, adbc_oracle 1.2+)": [
+                "parquet",
+            ],
         },
         "Output Formats": ["csv", "tsv", "json", "bson", "parquet", "xlsx", "binary"],
         "Storage Targets": [
@@ -343,6 +347,7 @@ def get_supported_formats() -> Dict[str, Any]:
             "azure_blob",
             "azure_datalake",
             "fabric_onelake",
+            "gcs",
         ],
     }
 
@@ -365,7 +370,8 @@ def suggest_parallelism_method(
     Returns:
         Dictionary with 'method' and 'explanation' keys
     """
-    source_lower = source_type.lower()
+    # ADBC types share the parallel planning of their native counterpart
+    source_lower = native_source_type(source_type)
 
     # Small tables - no parallelism needed
     if table_size_estimate == "small":

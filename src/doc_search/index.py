@@ -27,6 +27,7 @@ from .doc_versions import (
     DOC_TTL_DAYS,
     DOC_URLS,
     VERSION_LISTS,
+    DOC_URL_VERSION_ALIASES,
 )
 
 logger = logging.getLogger(__name__)
@@ -222,7 +223,8 @@ class SearchEngine:
 
                 # Build URL
                 if "{version}" in url_template:
-                    url = url_template.format(version=version)
+                    url_version = DOC_URL_VERSION_ALIASES.get(product, {}).get(version, version)
+                    url = url_template.format(version=url_version)
                 else:
                     url = url_template
 

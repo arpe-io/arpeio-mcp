@@ -85,13 +85,20 @@ class MigrationParams(BaseModel):
     auth_file: str = Field(
         ..., description="Path to authentication/credentials JSON file"
     )
-    source_db_auth_id: str = Field(..., description="Source database credential ID")
-    source_db_name: str = Field(..., description="Source database name")
-    target_db_auth_id: str = Field(..., description="Target database credential ID")
-    target_db_name: str = Field(..., description="Target database name")
     migration_db_auth_id: str = Field(
         ..., description="Migration database credential ID"
     )
+
+    # Source/target identifiers: required for a migration run, optional when
+    # upgrade_migdb=True (0.7.0+ relaxes them for the maintenance command).
+    source_db_auth_id: Optional[str] = Field(
+        None, description="Source database credential ID"
+    )
+    source_db_name: Optional[str] = Field(None, description="Source database name")
+    target_db_auth_id: Optional[str] = Field(
+        None, description="Target database credential ID"
+    )
+    target_db_name: Optional[str] = Field(None, description="Target database name")
 
     # Schema
     source_schema_name: Optional[str] = Field(None, description="Source schema name")
@@ -201,6 +208,49 @@ class MigrationParams(BaseModel):
             "hyphen; max 64 chars."
         ),
     )
+
+    # Metadata DB upgrade (0.7.0+)
+    upgrade_migdb: bool = Field(
+        False,
+        description=(
+            "Upgrade the migration (tracking) DB metadata to the run_id schema "
+            "introduced in 0.7.0, then exit (0.7.0+). Only auth_file and "
+            "migration_db_auth_id are needed in this mode."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_required_for_migration_run(self):
+        """Require source/target identifiers unless upgrade_migdb is set.
+
+        With upgrade_migdb, reject run-only options (task_list, resume) that
+        MigratorXpress would silently ignore since it exits after the upgrade.
+        """
+        src_tgt_fields = (
+            "source_db_auth_id",
+            "source_db_name",
+            "target_db_auth_id",
+            "target_db_name",
+        )
+        if self.upgrade_migdb:
+            if self.task_list:
+                raise ValueError(
+                    "upgrade_migdb cannot be combined with task_list: "
+                    "MigratorXpress upgrades the metadata DB and exits."
+                )
+            if self.resume:
+                raise ValueError(
+                    "upgrade_migdb cannot be combined with resume: "
+                    "MigratorXpress upgrades the metadata DB and exits."
+                )
+        else:
+            missing = [f for f in src_tgt_fields if not getattr(self, f)]
+            if missing:
+                raise ValueError(
+                    f"Missing required field(s) for a migration run: "
+                    f"{', '.join(missing)} (only optional with upgrade_migdb=true)"
+                )
+        return self
 
     @model_validator(mode="after")
     def validate_project_format(self):

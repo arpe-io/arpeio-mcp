@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.3.4] - 2026-09-24
+
+### Added
+
+- **FastBCP 1.0 / 1.1 / 1.2 support** with the new ADBC connection types, which read through the Arpe ADBC drivers:
+  - `adbc_mssql` (1.0+), `adbc_pgsql` (1.1+), `adbc_oracle` (1.2+) added to the `source.type` enum and to the capability registry (new entries `1.0.0.0`, `1.1.0.0`, `1.2.0.0`).
+  - ADBC types only produce Parquet output (FastBCP rejects other formats), so the validator refuses non-parquet formats with a hint to use the native type.
+  - Parallelism validation and suggestions follow the native type behind each ADBC type (`adbc_pgsql` → Ctid, `adbc_oracle` → Rowid, `adbc_mssql` → Physloc).
+  - Version-compatibility warning when an ADBC type is used against a FastBCP binary that predates it.
+  - Workflow tips and server instructions describe the ADBC types; `fastbcp_info` formats lists them as parquet-only.
+  - FastBCP docs `1.0`, `1.1`, `1.2` added to doc search. 1.2 is served at `/latest/`, so a new `DOC_URL_VERSION_ALIASES` map rewrites the crawl URL.
+- **MigratorXpress 0.7.0 / 0.7.1 support**: new registry entries and doc versions.
+  - New `upgrade_migdb` option (0.7.0+) builds `--upgrade_migdb`, which upgrades an existing tracking DB in place to the per-run (`run_id`) metadata schema and exits. Only `auth_file` and `migration_db_auth_id` are needed; it cannot be combined with `task_list` or `resume`. A warning is emitted against pre-0.7.0 binaries.
+  - The preview tool schema now lists the `project` run tag (0.6.30+), which was already supported but missing from the schema.
+- **LakeXpress 0.4.5, 0.4.7, 0.4.8, 0.4.9, 0.4.10 support**: new registry entries (0.4.6 was never released). No CLI surface changes. The version detector handles the 0.4.9+ `LakeXpress X.Y.Z (build <date>)` output.
+
+### Changed
+
+- **MigratorXpress** source/target identifiers are now required by the validator rather than the JSON schema, so upgrade-only commands can omit them; normal migration runs still require them.
+
+### Fixed
+
+- **FastBCP enum values that the CLI rejects**: `bool_format` now uses the real values (`automatic`, `true/false`, `1/0`, `t/f` instead of `TrueFalse`/`OneZero`/`YesNo`); `parquet_compression` drops `Lzo` and adds `Brotli`/`Lz4Raw`; `log_level` adds `Verbose`.
+- **FastBCP `fastbcp_info` formats** now lists the `gcs` storage target.
+
+### Notes
+
+- FastTransfer is unchanged: 0.17.0 is still the latest release (its ADBC work is only in a 0.17.1 release candidate).
+- MigratorXpress 0.7.0 changes the tracking-DB schema; older tracking DBs are upgraded automatically on the first run, or on demand with `upgrade_migdb`.
+
 ## [0.3.3] - 2026-06-29
 
 ### Fixed

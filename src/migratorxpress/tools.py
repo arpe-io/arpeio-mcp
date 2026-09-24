@@ -77,6 +77,12 @@ def _suggest_next_steps(errors: list) -> list[str]:
     error_fields = set()
     for error in errors:
         error_fields.update(str(x) for x in error["loc"])
+        # Model-level validators (e.g. missing source/target identifiers) have an
+        # empty loc; pick up the field names from the message instead.
+        msg = str(error.get("msg", ""))
+        for name in ("source_db_auth_id", "target_db_auth_id", "source_db_name", "target_db_name"):
+            if name in msg:
+                error_fields.add(name)
 
     if "auth_file" in error_fields or "source_db_auth_id" in error_fields or "target_db_auth_id" in error_fields:
         tips.append("Tip: Use `migratorxpress_validate_auth_file` to verify your credentials file is valid.")
@@ -91,6 +97,19 @@ def _suggest_next_steps(errors: list) -> list[str]:
 def _build_command_explanation(params: MigrationParams) -> str:
     """Build a human-readable explanation of what the command will do."""
     parts = []
+
+    if params.upgrade_migdb:
+        parts.append(
+            "Upgrade the migration (tracking) DB metadata in place to the run_id "
+            "schema introduced in MigratorXpress 0.7.0, then exit (no migration is run)"
+        )
+        parts.append(f"Migration DB credential ID: {params.migration_db_auth_id}")
+        parts.append(
+            "The upgrade is idempotent and resumable; back up the metadata DB first"
+        )
+        if params.license:
+            parts.append("License key provided (masked in display)")
+        return "\n".join(f"{i+1}. {part}" for i, part in enumerate(parts))
 
     parts.append(
         f"Migrate from source database '{params.source_db_name}' to target database '{params.target_db_name}'"
@@ -168,7 +187,9 @@ def create_tools(
                 "Build and preview a MigratorXpress migration command WITHOUT executing it. "
                 "Shows the exact CLI command with passwords masked. "
                 "Does NOT execute the migration or validate database connectivity. "
-                "After reviewing, pass the command to migratorxpress_execute_command."
+                "After reviewing, pass the command to migratorxpress_execute_command. "
+                "Set upgrade_migdb=true (0.7.0+) to build the metadata-DB upgrade "
+                "command instead (needs only auth_file and migration_db_auth_id)."
             ),
             annotations=ToolAnnotations(
                 readOnlyHint=True,
@@ -359,6 +380,21 @@ def create_tools(
                         "type": "string",
                         "description": "Path to license key file",
                     },
+                    "project": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                        "description": "Project tag attached to this run, stored on the tracking tables for later filtering (0.6.30+)",
+                    },
+                    "upgrade_migdb": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": (
+                            "Upgrade the migration (tracking) DB metadata in place to the run_id schema "
+                            "introduced in 0.7.0, then exit (0.7.0+). Only auth_file and "
+                            "migration_db_auth_id are needed; cannot be combined with task_list or resume. "
+                            "Pre-0.7.0 tracking DBs are also auto-upgraded on the first regular 0.7.0+ run."
+                        ),
+                    },
                     "os_type": {
                         "type": "string",
                         "enum": ["linux", "windows"],
@@ -366,12 +402,11 @@ def create_tools(
                         "default": "linux",
                     },
                 },
+                # source_db_auth_id, source_db_name, target_db_auth_id and
+                # target_db_name are required for a migration run but optional
+                # with upgrade_migdb=true; MigrationParams enforces that.
                 "required": [
                     "auth_file",
-                    "source_db_auth_id",
-                    "source_db_name",
-                    "target_db_auth_id",
-                    "target_db_name",
                     "migration_db_auth_id",
                 ],
             },
@@ -507,7 +542,12 @@ def create_tools(
             os_type = arguments.pop("os_type", "linux")
 
             # Auto-fill fasttransfer_dir_path from env var if not explicitly provided
-            if fasttransfer_dir_path and not arguments.get("fasttransfer_dir_path"):
+            # (skipped for --upgrade_migdb, which runs no transfer)
+            if (
+                fasttransfer_dir_path
+                and not arguments.get("fasttransfer_dir_path")
+                and not arguments.get("upgrade_migdb")
+            ):
                 arguments["fasttransfer_dir_path"] = fasttransfer_dir_path
 
             # Validate and parse parameters

@@ -57,6 +57,7 @@ class CommandBuilder(BaseCommandBuilder):
             "supports_log_dir": caps.supports_log_dir,
             "supports_project": caps.supports_project,
             "supports_postgres_migration_db": caps.supports_postgres_migration_db,
+            "supports_upgrade_migdb": caps.supports_upgrade_migdb,
         }
 
     def build_command(self, params: MigrationParams) -> List[str]:
@@ -76,12 +77,20 @@ class CommandBuilder(BaseCommandBuilder):
         # Auth file (required)
         cmd.extend(["-a", params.auth_file])
 
-        # Required database identifiers
-        cmd.extend(["--source_db_auth_id", params.source_db_auth_id])
-        cmd.extend(["--source_db_name", params.source_db_name])
-        cmd.extend(["--target_db_auth_id", params.target_db_auth_id])
-        cmd.extend(["--target_db_name", params.target_db_name])
+        # Database identifiers (source/target are optional with --upgrade_migdb)
+        if params.source_db_auth_id:
+            cmd.extend(["--source_db_auth_id", params.source_db_auth_id])
+        if params.source_db_name:
+            cmd.extend(["--source_db_name", params.source_db_name])
+        if params.target_db_auth_id:
+            cmd.extend(["--target_db_auth_id", params.target_db_auth_id])
+        if params.target_db_name:
+            cmd.extend(["--target_db_name", params.target_db_name])
         cmd.extend(["--migration_db_auth_id", params.migration_db_auth_id])
+
+        # Metadata DB upgrade to the run_id schema (0.7.0+), then exit
+        if params.upgrade_migdb:
+            cmd.append("--upgrade_migdb")
 
         # Schema names
         if params.source_schema_name:

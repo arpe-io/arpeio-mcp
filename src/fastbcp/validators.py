@@ -27,6 +27,26 @@ class SourceConnectionType(str, Enum):
     POSTGRES_COPY = "pgcopy"
     POSTGRES = "pgsql"
     TERADATA = "teradata"
+    # ADBC connection types (FastBCP 1.0+): same sources as their native
+    # counterparts, extracted through the Arpe ADBC drivers. Parquet output only.
+    ADBC_MSSQL = "adbc_mssql"  # 1.0+
+    ADBC_PGSQL = "adbc_pgsql"  # 1.1+
+    ADBC_ORACLE = "adbc_oracle"  # 1.2+
+
+
+# Each ADBC connection type maps to the native type FastBCP rewrites it to
+# internally, so parallelism planning follows the native source.
+ADBC_NATIVE_TYPES = {
+    "adbc_mssql": "mssql",
+    "adbc_pgsql": "pgsql",
+    "adbc_oracle": "oraodp",
+}
+
+
+def native_source_type(source_type: str) -> str:
+    """Return the native connection type behind an ADBC type (or the type itself)."""
+    source_type = source_type.lower()
+    return ADBC_NATIVE_TYPES.get(source_type, source_type)
 
 
 class OutputFormat(str, Enum):
@@ -73,9 +93,10 @@ class ParquetCompression(str, Enum):
 
     NONE = "None"
     SNAPPY = "Snappy"
+    BROTLI = "Brotli"
     GZIP = "Gzip"
     LZ4 = "Lz4"
-    LZO = "Lzo"
+    LZ4_RAW = "Lz4Raw"
     ZSTD = "Zstd"
 
 
@@ -84,6 +105,7 @@ class LogLevel(str, Enum):
 
     INFORMATION = "Information"
     DEBUG = "Debug"
+    VERBOSE = "Verbose"
 
 
 class DecimalSeparator(str, Enum):
@@ -103,9 +125,10 @@ class ApplicationIntent(str, Enum):
 class BoolFormat(str, Enum):
     """Boolean output format."""
 
-    TRUE_FALSE = "TrueFalse"
-    ONE_ZERO = "OneZero"
-    YES_NO = "YesNo"
+    AUTOMATIC = "automatic"
+    TRUE_FALSE = "true/false"
+    ONE_ZERO = "1/0"
+    T_F = "t/f"
 
 
 class SourceConnectionConfig(BaseModel):
@@ -325,10 +348,27 @@ class ExportRequest(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def validate_adbc_output_format(self):
+        """ADBC connection types only produce Parquet output."""
+        source_type = self.source.type.lower()
+        if (
+            source_type in ADBC_NATIVE_TYPES
+            and self.output.format != OutputFormat.PARQUET
+        ):
+            raise ValueError(
+                f"Connection type '{source_type}' only supports parquet output, "
+                f"not '{self.output.format.value}'. Use format 'parquet', or the "
+                f"native '{ADBC_NATIVE_TYPES[source_type]}' connection type for "
+                f"other formats."
+            )
+        return self
+
+    @model_validator(mode="after")
     def validate_method_compatibility(self):
         """Validate parallelism method compatibility with source database."""
         method = self.options.method
-        source_type = self.source.type.lower()
+        # ADBC types use the parallel planning of their native counterpart
+        source_type = native_source_type(self.source.type)
 
         # Ctid is PostgreSQL-specific
         if method == ParallelismMethod.CTID and source_type not in [

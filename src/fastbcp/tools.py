@@ -182,7 +182,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             "type": {
                                 "type": "string",
                                 "enum": [e.value for e in SourceConnectionType],
-                                "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL)",
+                                "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL). ADBC types 'adbc_mssql' (1.0+), 'adbc_pgsql' (1.1+) and 'adbc_oracle' (1.2+) read the same databases through the Arpe ADBC drivers and write parquet output only.",
                             },
                             "server": {
                                 "type": "string",
@@ -1002,6 +1002,20 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "- **Recommended parallelism**: `Physloc` (no key column needed, SQL Server-native)\n"
                 "- If table has an `IDENTITY` column, `RangeId` is also excellent\n"
                 "- Alternative: `Ntile` with any indexed column"
+            ),
+            "adbc_pgsql": (
+                "- **ADBC driver**: parquet output only (use `pgsql` for other formats)\n"
+                "- **Recommended parallelism**: `Ctid`, as for `pgsql`"
+            ),
+            "adbc_oracle": (
+                "- **ADBC driver**: parquet output only (use `oraodp` for other formats)\n"
+                "- **Recommended parallelism**: `Rowid`, as for `oraodp`\n"
+                "- Oracle native network encryption is auto-detected; override with "
+                "`FASTBCP_ADBC_ENCRYPTION` / `FASTBCP_ADBC_DATA_INTEGRITY`"
+            ),
+            "adbc_mssql": (
+                "- **ADBC driver**: parquet output only (use `mssql` for other formats)\n"
+                "- **Recommended parallelism**: `Physloc`, as for `mssql`"
             ),
             "mysql": (
                 "- **Recommended parallelism**: `RangeId` on the primary key\n"

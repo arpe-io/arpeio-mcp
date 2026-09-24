@@ -71,6 +71,14 @@ downstream consumer expects one file.
 thread). Better when the downstream system can import multiple files in \
 parallel (e.g. Spark, Snowflake COPY INTO, bulk loaders).
 
+## FastBCP ADBC connection types
+
+FastBCP 1.x adds ADBC connection types that read through the Arpe ADBC \
+drivers: `adbc_mssql` (1.0+), `adbc_pgsql` (1.1+) and `adbc_oracle` (1.2+). \
+They only write **Parquet** output; use the native type (`mssql`, `pgsql`, \
+`oraodp`) for CSV, JSON and the other formats. Parallelism methods follow \
+the native type (Physloc, Ctid, Rowid).
+
 ## LakeXpress 0.4.0+ notes
 
 - The metadata-database subcommand was renamed from `logdb` to `lxdb` (e.g. \

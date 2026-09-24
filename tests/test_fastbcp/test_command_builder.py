@@ -375,13 +375,13 @@ class TestCommandBuilder:
             output={
                 "format": "csv",
                 "file_output": "/tmp/output.csv",
-                "bool_format": "OneZero",
+                "bool_format": "1/0",
             },
         )
 
         command = command_builder.build_command(request)
         assert "--boolformat" in command
-        assert "OneZero" in command
+        assert "1/0" in command
 
     def test_build_command_date_format(self, command_builder):
         """Test building command with date format."""
@@ -760,7 +760,7 @@ class TestHelperFunctions:
         assert "local" in formats["Storage Targets"]
         assert "s3" in formats["Storage Targets"]
         assert "azure_blob" in formats["Storage Targets"]
-        assert len(formats["Storage Targets"]) == 6
+        assert len(formats["Storage Targets"]) == 7
 
     def test_suggest_parallelism_small_table(self):
         """Test parallelism suggestion for small table."""
@@ -850,3 +850,39 @@ class TestHelperFunctions:
         )
 
         assert suggestion["method"] in ["DataDriven", "Ntile"]
+
+
+class TestAdbcCommands:
+    """ADBC connection types are passed through as-is to the CLI."""
+
+    def test_adbc_type_emitted(self, command_builder):
+        request = ExportRequest(
+            source={
+                "type": "adbc_oracle",
+                "server": "dbhost:1521/ORCL",
+                "database": "ORCL",
+                "schema": "SALES",
+                "table": "ORDERS",
+                "user": "u",
+                "password": "p",
+            },
+            output={"format": "parquet", "directory": "/tmp/out"},
+        )
+        command = command_builder.build_command(request)
+        i = command.index("--sourceconnectiontype")
+        assert command[i + 1] == "adbc_oracle"
+        assert command[command.index("--fileoutput") + 1].endswith(".parquet")
+
+    def test_adbc_formats_listed(self):
+        formats = get_supported_formats()
+        adbc = [k for k in formats["Database Sources"] if k.startswith("ADBC")]
+        assert len(adbc) == 1
+        assert formats["Database Sources"][adbc[0]] == ["parquet"]
+
+    @pytest.mark.parametrize(
+        "source_type,method",
+        [("adbc_pgsql", "Ctid"), ("adbc_oracle", "Rowid"), ("adbc_mssql", "Physloc")],
+    )
+    def test_parallelism_follows_native_type(self, source_type, method):
+        result = suggest_parallelism_method(source_type, False, False, "large")
+        assert result["method"] == method

@@ -30,6 +30,7 @@ class VersionCapabilities:
     supports_log_dir: bool = False
     supports_project: bool = False
     supports_postgres_migration_db: bool = False
+    supports_upgrade_migdb: bool = False
 
 
 # Static version registry: version string -> capabilities
@@ -308,6 +309,55 @@ VERSION_REGISTRY: Dict[str, VersionCapabilities] = {
         supports_project=True,
         supports_postgres_migration_db=True,
     ),
+    # 0.7.0: per-run metadata snapshots (run_id added to the PKs of the sources /
+    # sourcecolumns / sourceconstraints / targets / targetcolumns catalog tables).
+    # New --upgrade_migdb flag upgrades an existing tracking DB in place and exits
+    # (source/target args become optional in that mode). Pre-0.7.0 tracking DBs are
+    # also auto-upgraded on the first regular run.
+    "0.7.0": VersionCapabilities(
+        source_databases=frozenset(["oracle", "postgresql", "sqlserver", "netezza"]),
+        target_databases=frozenset(["postgresql", "sqlserver", "mysql", "oracle"]),
+        migration_db_types=frozenset(["sqlserver", "postgres"]),
+        tasks=frozenset(
+            ["translate", "create", "transfer", "diff", "copy_pk", "copy_ak", "copy_fk", "all"]
+        ),
+        fk_modes=frozenset(["trusted", "untrusted", "disabled"]),
+        migration_db_modes=frozenset(["preserve", "truncate", "drop"]),
+        load_modes=frozenset(["truncate", "append"]),
+        supports_no_banner=True,
+        supports_version_flag=True,
+        supports_fasttransfer=True,
+        supports_license=True,
+        supports_no_progress=True,
+        supports_quiet_ft=True,
+        supports_log_dir=True,
+        supports_project=True,
+        supports_postgres_migration_db=True,
+        supports_upgrade_migdb=True,
+    ),
+    # 0.7.1: bug fix only (diff step on multi-run tracking DBs for MSSQL / Netezza /
+    # Oracle sources). No CLI surface change.
+    "0.7.1": VersionCapabilities(
+        source_databases=frozenset(["oracle", "postgresql", "sqlserver", "netezza"]),
+        target_databases=frozenset(["postgresql", "sqlserver", "mysql", "oracle"]),
+        migration_db_types=frozenset(["sqlserver", "postgres"]),
+        tasks=frozenset(
+            ["translate", "create", "transfer", "diff", "copy_pk", "copy_ak", "copy_fk", "all"]
+        ),
+        fk_modes=frozenset(["trusted", "untrusted", "disabled"]),
+        migration_db_modes=frozenset(["preserve", "truncate", "drop"]),
+        load_modes=frozenset(["truncate", "append"]),
+        supports_no_banner=True,
+        supports_version_flag=True,
+        supports_fasttransfer=True,
+        supports_license=True,
+        supports_no_progress=True,
+        supports_quiet_ft=True,
+        supports_log_dir=True,
+        supports_project=True,
+        supports_postgres_migration_db=True,
+        supports_upgrade_migdb=True,
+    ),
 }
 
 
@@ -344,5 +394,13 @@ def check_version_compatibility(
                 f"PostgreSQL tracking DB (ds_type='postgres') requires "
                 f"MigratorXpress 0.6.32+, but detected version is {ver_str}"
             )
+
+    # --upgrade_migdb requires MigratorXpress 0.7.0+
+    if params.get("upgrade_migdb") and not capabilities.supports_upgrade_migdb:
+        ver_str = str(detected_version) if detected_version else "unknown"
+        warnings.append(
+            f"--upgrade_migdb requires MigratorXpress 0.7.0+, "
+            f"but detected version is {ver_str}"
+        )
 
     return warnings

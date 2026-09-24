@@ -25,9 +25,15 @@ from src.fastbcp.validators import (
 class TestSourceConnectionType:
     """Tests for SourceConnectionType enum."""
 
-    def test_all_14_source_types(self):
-        """Test that there are exactly 14 source types."""
-        assert len(SourceConnectionType) == 14
+    def test_all_17_source_types(self):
+        """Test that there are exactly 17 source types (14 native + 3 ADBC)."""
+        assert len(SourceConnectionType) == 17
+
+    def test_adbc_types_exist(self):
+        """Test that the FastBCP 1.x ADBC source types exist."""
+        assert SourceConnectionType("adbc_mssql") == SourceConnectionType.ADBC_MSSQL
+        assert SourceConnectionType("adbc_pgsql") == SourceConnectionType.ADBC_PGSQL
+        assert SourceConnectionType("adbc_oracle") == SourceConnectionType.ADBC_ORACLE
 
     def test_oraodp_exists(self):
         """Test that oraodp source type exists."""
@@ -97,16 +103,17 @@ class TestOtherEnums:
         assert StorageTarget("azure_blob") == StorageTarget.AZURE_BLOB
 
     def test_all_parquet_compressions(self):
-        """Test all 6 parquet compression values exist."""
-        assert len(ParquetCompression) == 6
-        assert ParquetCompression("Snappy") == ParquetCompression.SNAPPY
-        assert ParquetCompression("Zstd") == ParquetCompression.ZSTD
+        """Test the 7 parquet compression values accepted by the CLI."""
+        assert {c.value for c in ParquetCompression} == {
+            "None", "Snappy", "Brotli", "Gzip", "Lz4", "Lz4Raw", "Zstd"
+        }
 
     def test_log_levels(self):
-        """Test all 2 log level values exist."""
-        assert len(LogLevel) == 2
+        """Test all 3 log level values exist."""
+        assert len(LogLevel) == 3
         assert LogLevel("Information") == LogLevel.INFORMATION
         assert LogLevel("Debug") == LogLevel.DEBUG
+        assert LogLevel("Verbose") == LogLevel.VERBOSE
 
     def test_decimal_separator(self):
         """Test decimal separator values."""
@@ -120,9 +127,9 @@ class TestOtherEnums:
 
     def test_bool_format(self):
         """Test bool format values."""
-        assert BoolFormat("TrueFalse") == BoolFormat.TRUE_FALSE
-        assert BoolFormat("OneZero") == BoolFormat.ONE_ZERO
-        assert BoolFormat("YesNo") == BoolFormat.YES_NO
+        assert {b.value for b in BoolFormat} == {
+            "automatic", "true/false", "1/0", "t/f"
+        }
 
 
 class TestSourceConnectionConfig:
@@ -738,3 +745,44 @@ class TestParallelismSuggestionRequest:
             source_type="pgsql", has_numeric_key=True, table_size_estimate="medium"
         )
         assert request.has_identity_column is False
+
+
+class TestAdbcExportRequest:
+    """Tests for ADBC connection types (FastBCP 1.x)."""
+
+    @staticmethod
+    def _request(source_type, fmt="parquet", method="None"):
+        return ExportRequest(
+            source={
+                "type": source_type,
+                "database": "db",
+                "table": "t",
+                "user": "u",
+                "password": "p",
+            },
+            output={"format": fmt, "directory": "/tmp/out"},
+            options={"method": method},
+        )
+
+    @pytest.mark.parametrize("source_type", ["adbc_mssql", "adbc_pgsql", "adbc_oracle"])
+    def test_parquet_accepted(self, source_type):
+        assert self._request(source_type).source.type == source_type
+
+    @pytest.mark.parametrize("fmt", ["csv", "tsv", "json", "bson", "xlsx", "binary"])
+    def test_non_parquet_rejected(self, fmt):
+        with pytest.raises(ValidationError, match="only supports parquet"):
+            self._request("adbc_pgsql", fmt=fmt)
+
+    def test_native_type_still_allows_csv(self):
+        assert self._request("pgsql", fmt="csv").output.format == OutputFormat.CSV
+
+    @pytest.mark.parametrize(
+        "source_type,method",
+        [("adbc_pgsql", "Ctid"), ("adbc_oracle", "Rowid"), ("adbc_mssql", "Physloc")],
+    )
+    def test_native_parallel_methods_allowed(self, source_type, method):
+        assert self._request(source_type, method=method).options.method.value == method
+
+    def test_mismatched_native_method_rejected(self):
+        with pytest.raises(ValidationError, match="Ctid"):
+            self._request("adbc_oracle", method="Ctid")

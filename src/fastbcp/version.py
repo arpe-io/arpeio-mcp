@@ -24,6 +24,14 @@ class VersionCapabilities:
     supports_config_file: bool = False
 
 
+# First FastBCP release accepting each ADBC connection type
+ADBC_MIN_VERSIONS: Dict[str, str] = {
+    "adbc_mssql": "1.0.0.0",
+    "adbc_pgsql": "1.1.0.0",
+    "adbc_oracle": "1.2.0.0",
+}
+
+
 # Static version registry: version string -> capabilities
 VERSION_REGISTRY: Dict[str, VersionCapabilities] = {
     "0.29.1.0": VersionCapabilities(
@@ -267,6 +275,195 @@ VERSION_REGISTRY: Dict[str, VersionCapabilities] = {
         supports_merge=True,
         supports_config_file=True,
     ),
+    "1.0.0.0": VersionCapabilities(
+        source_types=frozenset(
+            [
+                "clickhouse",
+                "hana",
+                "mssql",
+                "msoledbsql",
+                "mysql",
+                "nzcopy",
+                "nzoledb",
+                "nzsql",
+                "odbc",
+                "oledb",
+                "oraodp",
+                "pgcopy",
+                "pgsql",
+                "teradata",
+                "adbc_mssql",
+            ]
+        ),
+        output_formats=frozenset(
+            [
+                "csv",
+                "tsv",
+                "json",
+                "bson",
+                "parquet",
+                "xlsx",
+                "binary",
+            ]
+        ),
+        parallelism_methods=frozenset(
+            [
+                "Ctid",
+                "DataDriven",
+                "Ntile",
+                "NZDataSlice",
+                "None",
+                "Physloc",
+                "Random",
+                "RangeId",
+                "Rowid",
+                "Timepartition",
+            ]
+        ),
+        storage_targets=frozenset(
+            [
+                "local",
+                "s3",
+                "s3compatible",
+                "azure_blob",
+                "azure_datalake",
+                "fabric_onelake",
+                "gcs",
+            ]
+        ),
+        supports_nobanner=True,
+        supports_version_flag=True,
+        supports_cloud_profile=True,
+        supports_merge=True,
+        supports_config_file=True,
+    ),
+    "1.1.0.0": VersionCapabilities(
+        source_types=frozenset(
+            [
+                "clickhouse",
+                "hana",
+                "mssql",
+                "msoledbsql",
+                "mysql",
+                "nzcopy",
+                "nzoledb",
+                "nzsql",
+                "odbc",
+                "oledb",
+                "oraodp",
+                "pgcopy",
+                "pgsql",
+                "teradata",
+                "adbc_mssql",
+                "adbc_pgsql",
+            ]
+        ),
+        output_formats=frozenset(
+            [
+                "csv",
+                "tsv",
+                "json",
+                "bson",
+                "parquet",
+                "xlsx",
+                "binary",
+            ]
+        ),
+        parallelism_methods=frozenset(
+            [
+                "Ctid",
+                "DataDriven",
+                "Ntile",
+                "NZDataSlice",
+                "None",
+                "Physloc",
+                "Random",
+                "RangeId",
+                "Rowid",
+                "Timepartition",
+            ]
+        ),
+        storage_targets=frozenset(
+            [
+                "local",
+                "s3",
+                "s3compatible",
+                "azure_blob",
+                "azure_datalake",
+                "fabric_onelake",
+                "gcs",
+            ]
+        ),
+        supports_nobanner=True,
+        supports_version_flag=True,
+        supports_cloud_profile=True,
+        supports_merge=True,
+        supports_config_file=True,
+    ),
+    "1.2.0.0": VersionCapabilities(
+        source_types=frozenset(
+            [
+                "clickhouse",
+                "hana",
+                "mssql",
+                "msoledbsql",
+                "mysql",
+                "nzcopy",
+                "nzoledb",
+                "nzsql",
+                "odbc",
+                "oledb",
+                "oraodp",
+                "pgcopy",
+                "pgsql",
+                "teradata",
+                "adbc_mssql",
+                "adbc_pgsql",
+                "adbc_oracle",
+            ]
+        ),
+        output_formats=frozenset(
+            [
+                "csv",
+                "tsv",
+                "json",
+                "bson",
+                "parquet",
+                "xlsx",
+                "binary",
+            ]
+        ),
+        parallelism_methods=frozenset(
+            [
+                "Ctid",
+                "DataDriven",
+                "Ntile",
+                "NZDataSlice",
+                "None",
+                "Physloc",
+                "Random",
+                "RangeId",
+                "Rowid",
+                "Timepartition",
+            ]
+        ),
+        storage_targets=frozenset(
+            [
+                "local",
+                "s3",
+                "s3compatible",
+                "azure_blob",
+                "azure_datalake",
+                "fabric_onelake",
+                "gcs",
+            ]
+        ),
+        supports_nobanner=True,
+        supports_version_flag=True,
+        supports_cloud_profile=True,
+        supports_merge=True,
+        supports_config_file=True,
+    ),
 }
 
 
@@ -286,11 +483,14 @@ def check_version_compatibility(
         List of warning strings (empty if all OK)
     """
     warnings: list[str] = []
+    ver_str = str(detected_version) if detected_version else "unknown"
 
-    # No version-gated features yet -- add checks here as they appear
-    # Example pattern:
-    # if params.get("some_feature") and not capabilities.supports_some_feature:
-    #     ver_str = str(detected_version) if detected_version else "unknown"
-    #     warnings.append(f"--some_feature requires FastBCP X.Y.Z.W+, but detected version is {ver_str}")
+    # ADBC connection types were added one per release
+    source_type = ((params.get("source") or {}).get("type") or "").lower()
+    if source_type in ADBC_MIN_VERSIONS and source_type not in capabilities.source_types:
+        warnings.append(
+            f"Connection type '{source_type}' requires FastBCP "
+            f"{ADBC_MIN_VERSIONS[source_type]}+, but detected version is {ver_str}"
+        )
 
     return warnings
