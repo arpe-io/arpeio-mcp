@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.5] - 2026-09-24
+
+### Fixed
+
+- **Server crashed on startup with mcp 2.x** (`AttributeError: 'Server' object has no attribute 'list_prompts'`). The `mcp` dependency had no upper bound, so fresh installs (including the Hugging Face Space build) pulled mcp 2.2.0, which removed the low-level server decorator API. Pinned `mcp>=1.0.0,<2`.
+
 ## [0.3.4] - 2026-09-24
 
 ### Added

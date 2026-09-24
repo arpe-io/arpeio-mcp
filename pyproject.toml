@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "arpeio-mcp"
-version = "0.3.4"
+version = "0.3.5"
 description = "Unified MCP server for Arpe.io data tools — FastBCP, FastTransfer, LakeXpress, MigratorXpress"
 readme = "README.md"
 license = "MIT"
@@ -23,7 +23,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2",
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",
     "rank-bm25>=0.2.2",
