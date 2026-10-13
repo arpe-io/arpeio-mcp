@@ -89,16 +89,30 @@ class MigrationParams(BaseModel):
         ..., description="Migration database credential ID"
     )
 
-    # Source/target identifiers: required for a migration run, optional when
+    # Source/target auth ids: required for a migration run, optional when
     # upgrade_migdb=True (0.7.0+ relaxes them for the maintenance command).
+    # The database names are optional: required by MigratorXpress before 0.7.2,
+    # taken from the auth entries from 0.7.2 on (version-gated warning).
     source_db_auth_id: Optional[str] = Field(
         None, description="Source database credential ID"
     )
-    source_db_name: Optional[str] = Field(None, description="Source database name")
+    source_db_name: Optional[str] = Field(
+        None,
+        description=(
+            "Source database name. Required before 0.7.2; deprecated and "
+            "ignored from 0.7.2 (the source auth entry's database is used)."
+        ),
+    )
     target_db_auth_id: Optional[str] = Field(
         None, description="Target database credential ID"
     )
-    target_db_name: Optional[str] = Field(None, description="Target database name")
+    target_db_name: Optional[str] = Field(
+        None,
+        description=(
+            "Target database name. Required before 0.7.2; optional from 0.7.2 "
+            "(defaults to the target auth entry's database and must match it)."
+        ),
+    )
 
     # Schema
     source_schema_name: Optional[str] = Field(None, description="Source schema name")
@@ -221,16 +235,18 @@ class MigrationParams(BaseModel):
 
     @model_validator(mode="after")
     def validate_required_for_migration_run(self):
-        """Require source/target identifiers unless upgrade_migdb is set.
+        """Require the source/target auth ids unless upgrade_migdb is set.
+
+        source_db_name / target_db_name are not enforced here: MigratorXpress
+        0.7.2+ takes them from the auth entries, and check_version_compatibility
+        warns when they are omitted for an older binary.
 
         With upgrade_migdb, reject run-only options (task_list, resume) that
         MigratorXpress would silently ignore since it exits after the upgrade.
         """
         src_tgt_fields = (
             "source_db_auth_id",
-            "source_db_name",
             "target_db_auth_id",
-            "target_db_name",
         )
         if self.upgrade_migdb:
             if self.task_list:

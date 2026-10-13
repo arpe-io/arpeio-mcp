@@ -29,6 +29,7 @@ ADBC_MIN_VERSIONS: Dict[str, str] = {
     "adbc_mssql": "1.0.0.0",
     "adbc_pgsql": "1.1.0.0",
     "adbc_oracle": "1.2.0.0",
+    "adbc_netezza": "1.3.0.0",
 }
 
 
@@ -464,6 +465,72 @@ VERSION_REGISTRY: Dict[str, VersionCapabilities] = {
         supports_merge=True,
         supports_config_file=True,
     ),
+    "1.3.0.0": VersionCapabilities(
+        source_types=frozenset(
+            [
+                "clickhouse",
+                "hana",
+                "mssql",
+                "msoledbsql",
+                "mysql",
+                "nzcopy",
+                "nzoledb",
+                "nzsql",
+                "odbc",
+                "oledb",
+                "oraodp",
+                "pgcopy",
+                "pgsql",
+                "teradata",
+                "adbc_mssql",
+                "adbc_pgsql",
+                "adbc_oracle",
+                "adbc_netezza",
+            ]
+        ),
+        output_formats=frozenset(
+            [
+                "csv",
+                "tsv",
+                "json",
+                "bson",
+                "parquet",
+                "xlsx",
+                "binary",
+            ]
+        ),
+        parallelism_methods=frozenset(
+            [
+                "Ctid",
+                "DataDriven",
+                "DBPartition",
+                "Ntile",
+                "NZDataSlice",
+                "None",
+                "Physloc",
+                "Random",
+                "RangeId",
+                "Rowid",
+                "Timepartition",
+            ]
+        ),
+        storage_targets=frozenset(
+            [
+                "local",
+                "s3",
+                "s3compatible",
+                "azure_blob",
+                "azure_datalake",
+                "fabric_onelake",
+                "gcs",
+            ]
+        ),
+        supports_nobanner=True,
+        supports_version_flag=True,
+        supports_cloud_profile=True,
+        supports_merge=True,
+        supports_config_file=True,
+    ),
 }
 
 
@@ -491,6 +558,13 @@ def check_version_compatibility(
         warnings.append(
             f"Connection type '{source_type}' requires FastBCP "
             f"{ADBC_MIN_VERSIONS[source_type]}+, but detected version is {ver_str}"
+        )
+
+    method = (params.get("options") or {}).get("method")
+    if method == "DBPartition" and method not in capabilities.parallelism_methods:
+        warnings.append(
+            f"Parallel method 'DBPartition' requires FastBCP 1.3.0.0+, "
+            f"but detected version is {ver_str}"
         )
 
     return warnings

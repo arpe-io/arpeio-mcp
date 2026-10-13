@@ -58,6 +58,8 @@ class CommandBuilder(BaseCommandBuilder):
             "supports_project": caps.supports_project,
             "supports_postgres_migration_db": caps.supports_postgres_migration_db,
             "supports_upgrade_migdb": caps.supports_upgrade_migdb,
+            "supports_optional_db_names": caps.supports_optional_db_names,
+            "supports_drop_tables_bool_parsing": caps.supports_drop_tables_bool_parsing,
         }
 
     def build_command(self, params: MigrationParams) -> List[str]:
@@ -77,7 +79,8 @@ class CommandBuilder(BaseCommandBuilder):
         # Auth file (required)
         cmd.extend(["-a", params.auth_file])
 
-        # Database identifiers (source/target are optional with --upgrade_migdb)
+        # Database identifiers (source/target are optional with --upgrade_migdb;
+        # the database names are optional from 0.7.2)
         if params.source_db_auth_id:
             cmd.extend(["--source_db_auth_id", params.source_db_auth_id])
         if params.source_db_name:
@@ -132,7 +135,11 @@ class CommandBuilder(BaseCommandBuilder):
         # String-boolean parameters
         if params.compute_nbrows is not None:
             cmd.extend(["--compute_nbrows", params.compute_nbrows])
-        if params.drop_tables_if_exists is not None:
+        # "false" is the default, so it is left out: MigratorXpress before 0.7.2
+        # parsed any value, including "false", as True and dropped the tables.
+        if params.drop_tables_if_exists is not None and (
+            params.drop_tables_if_exists.lower() != "false"
+        ):
             cmd.extend(["--drop_tables_if_exists", params.drop_tables_if_exists])
 
         # Load mode
@@ -222,11 +229,12 @@ def get_supported_capabilities() -> Dict[str, Any]:
         "Target Databases": [
             "PostgreSQL (postgresql)",
             "SQL Server (sqlserver)",
-            "MySQL (mysql) -- limited: schema creation only",
-            "Oracle (oracle)",
+            "MySQL (mysql) -- before 0.7.2 only, limited: schema creation only",
+            "Oracle (oracle) -- before 0.7.2 only (0.7.2+ accepts SQL Server and PostgreSQL targets only)",
         ],
         "Migration Database": [
             "SQL Server (sqlserver)",
+            "PostgreSQL (postgres) -- 0.6.32+",
         ],
         "Tasks": {
             "translate": "Translate source schema to target schema DDL",
@@ -235,8 +243,9 @@ def get_supported_capabilities() -> Dict[str, Any]:
             "diff": "Compare source and target row counts",
             "copy_pk": "Copy primary key constraints to target",
             "copy_ak": "Copy alternate key (unique) constraints to target",
-            "copy_fk": "Copy foreign key constraints to target",
-            "all": "Run all tasks in sequence (translate, create, transfer, diff, copy_pk, copy_ak, copy_fk)",
+            "copy_fk": "Copy foreign key constraints to target (SQL Server target only from 0.7.2)",
+            "all": "Run all tasks in sequence (translate, create, transfer, diff, copy_pk, copy_ak, copy_fk); "
+            "includes copy_fk, so not usable with a PostgreSQL target from 0.7.2",
         },
         "Migration DB Modes": {
             "preserve": "Keep existing migration database data",
@@ -337,37 +346,101 @@ def suggest_workflow(
         }
     )
 
+    src = (source_type or "").lower()
+    tgt = (target_type or "").lower()
+    notes: List[str] = []
+    if tgt and tgt not in ("postgresql", "sqlserver"):
+        notes.append(
+            f"MigratorXpress 0.7.2+ only accepts SQL Server and PostgreSQL targets; "
+            f"a '{tgt}' target stops at startup with exit code 10 "
+            "(UNSUPPORTED_TARGET_DB_TYPE)."
+        )
+    if src == "netezza" and tgt == "postgresql":
+        notes.append(
+            "Netezza to PostgreSQL has no data type mapper in 0.7.2+: the run "
+            "stops at startup with exit code 10 (UNSUPPORTED_SOURCE_TARGET_PAIR)."
+        )
+
+    # Constraint tasks this pair can run (0.7.2 / 0.7.3 pre-flight checks)
+    constraint_tasks = ["copy_pk", "copy_ak", "copy_fk"]
+    if src == "netezza":
+        constraint_tasks = []
+        if include_constraints:
+            notes.append(
+                "Constraint tasks are not supported for a Netezza source "
+                "(exit code 10, CONSTRAINT_COPY_UNSUPPORTED_SOURCE in 0.7.3+); "
+                "the constraint step is skipped."
+            )
+    elif tgt == "postgresql":
+        constraint_tasks = ["copy_pk", "copy_ak"]
+        notes.append(
+            "copy_fk (and therefore --task_list all) is rejected for a PostgreSQL "
+            "target from 0.7.2 (exit code 10, COPY_FK_UNSUPPORTED_TARGET); "
+            "use an explicit task list."
+        )
+    if include_constraints and src in ("postgresql", "sqlserver"):
+        notes.append(
+            "Constraint copy from a PostgreSQL or SQL Server source requires "
+            "MigratorXpress 0.7.3+ (earlier versions read keys from Oracle only)."
+        )
+
     # Step 5: Constraints (optional)
-    if include_constraints:
+    if include_constraints and constraint_tasks:
         steps.append(
             {
                 "step": 5,
-                "task": "copy_pk + copy_ak + copy_fk",
-                "description": "Copy primary keys, alternate keys, and foreign keys to target",
+                "task": " + ".join(constraint_tasks),
+                "description": (
+                    "Copy "
+                    + ", ".join(
+                        {
+                            "copy_pk": "primary keys",
+                            "copy_ak": "alternate keys",
+                            "copy_fk": "foreign keys",
+                        }[t]
+                        for t in constraint_tasks
+                    )
+                    + " to target"
+                ),
                 "example": (
                     "MigratorXpress -a auth.json "
                     "--source_db_auth_id source_db --source_db_name mydb "
                     "--target_db_auth_id target_db --target_db_name targetdb "
                     "--migration_db_auth_id migration_db "
-                    "--task_list copy_pk copy_ak copy_fk"
+                    f"--task_list {' '.join(constraint_tasks)}"
                 ),
             }
         )
 
-    # Alternative: all
+    # Alternative: a single invocation. 'all' includes copy_fk, which a
+    # PostgreSQL target rejects (0.7.2+), and the constraint tasks, which a
+    # Netezza source rejects (0.7.3+): use an explicit list in those cases.
+    if src == "netezza" or tgt == "postgresql":
+        single_run = ["translate", "create", "transfer", "diff"]
+        if include_constraints:
+            single_run += constraint_tasks
+        alt_task = " ".join(single_run)
+    else:
+        alt_task = "all"
     steps.append(
         {
             "step": "alt",
-            "task": "all",
+            "task": alt_task,
             "description": "Alternative: run all tasks in a single invocation",
             "example": (
                 "MigratorXpress -a auth.json "
                 "--source_db_auth_id source_db --source_db_name mydb "
                 "--target_db_auth_id target_db --target_db_name targetdb "
                 "--migration_db_auth_id migration_db "
-                "--task_list all"
+                f"--task_list {alt_task}"
             ),
         }
+    )
+
+    notes.append(
+        "From 0.7.2, --source_db_name is deprecated and ignored and "
+        "--target_db_name is optional: both databases are read from the auth "
+        "entries. Keep them for 0.7.1 and earlier, where they are required."
     )
 
     return {
@@ -375,4 +448,5 @@ def suggest_workflow(
         "target_type": target_type,
         "include_constraints": include_constraints,
         "steps": steps,
+        "notes": notes,
     }

@@ -31,6 +31,8 @@ class VersionCapabilities:
     supports_project: bool = False
     supports_postgres_migration_db: bool = False
     supports_upgrade_migdb: bool = False
+    supports_optional_db_names: bool = False
+    supports_drop_tables_bool_parsing: bool = False
 
 
 # Static version registry: version string -> capabilities
@@ -358,6 +360,61 @@ VERSION_REGISTRY: Dict[str, VersionCapabilities] = {
         supports_postgres_migration_db=True,
         supports_upgrade_migdb=True,
     ),
+    # 0.7.2: --source_db_name (deprecated, ignored) and --target_db_name are no longer
+    # required: the databases come from the auth entries (a --target_db_name that
+    # differs from the target auth entry fails with exit 20). --drop_tables_if_exists
+    # now parses true/false (before, any value including "false" meant True).
+    # Pre-flight checks reject a target or tracking DB other than SQL Server /
+    # PostgreSQL, Netezza -> PostgreSQL, and copy_fk with a PostgreSQL target (exit 10).
+    "0.7.2": VersionCapabilities(
+        source_databases=frozenset(["oracle", "postgresql", "sqlserver", "netezza"]),
+        target_databases=frozenset(["postgresql", "sqlserver"]),
+        migration_db_types=frozenset(["sqlserver", "postgres"]),
+        tasks=frozenset(
+            ["translate", "create", "transfer", "diff", "copy_pk", "copy_ak", "copy_fk", "all"]
+        ),
+        fk_modes=frozenset(["trusted", "untrusted", "disabled"]),
+        migration_db_modes=frozenset(["preserve", "truncate", "drop"]),
+        load_modes=frozenset(["truncate", "append"]),
+        supports_no_banner=True,
+        supports_version_flag=True,
+        supports_fasttransfer=True,
+        supports_license=True,
+        supports_no_progress=True,
+        supports_quiet_ft=True,
+        supports_log_dir=True,
+        supports_project=True,
+        supports_postgres_migration_db=True,
+        supports_upgrade_migdb=True,
+        supports_optional_db_names=True,
+        supports_drop_tables_bool_parsing=True,
+    ),
+    # 0.7.3: copy_pk / copy_ak / copy_fk now work for PostgreSQL and SQL Server sources
+    # (Netezza source + constraint task exits 10), runs with failed tables exit 40/41,
+    # unknown auth entry exits 10. No CLI flag change.
+    "0.7.3": VersionCapabilities(
+        source_databases=frozenset(["oracle", "postgresql", "sqlserver", "netezza"]),
+        target_databases=frozenset(["postgresql", "sqlserver"]),
+        migration_db_types=frozenset(["sqlserver", "postgres"]),
+        tasks=frozenset(
+            ["translate", "create", "transfer", "diff", "copy_pk", "copy_ak", "copy_fk", "all"]
+        ),
+        fk_modes=frozenset(["trusted", "untrusted", "disabled"]),
+        migration_db_modes=frozenset(["preserve", "truncate", "drop"]),
+        load_modes=frozenset(["truncate", "append"]),
+        supports_no_banner=True,
+        supports_version_flag=True,
+        supports_fasttransfer=True,
+        supports_license=True,
+        supports_no_progress=True,
+        supports_quiet_ft=True,
+        supports_log_dir=True,
+        supports_project=True,
+        supports_postgres_migration_db=True,
+        supports_upgrade_migdb=True,
+        supports_optional_db_names=True,
+        supports_drop_tables_bool_parsing=True,
+    ),
 }
 
 
@@ -402,5 +459,35 @@ def check_version_compatibility(
             f"--upgrade_migdb requires MigratorXpress 0.7.0+, "
             f"but detected version is {ver_str}"
         )
+
+    ver_str = str(detected_version) if detected_version else "unknown"
+    # A migration run (not --upgrade_migdb) that names its source/target entries
+    is_run = not params.get("upgrade_migdb") and bool(
+        params.get("source_db_auth_id") or params.get("target_db_auth_id")
+    )
+
+    # --source_db_name / --target_db_name are required before 0.7.2
+    if is_run and not capabilities.supports_optional_db_names:
+        missing = [
+            f"--{name}"
+            for name in ("source_db_name", "target_db_name")
+            if not params.get(name)
+        ]
+        if missing:
+            warnings.append(
+                f"{' and '.join(missing)} can only be omitted with MigratorXpress "
+                f"0.7.2+ (earlier versions require them), but detected version "
+                f"is {ver_str}"
+            )
+
+    # --source_db_name is deprecated and ignored from 0.7.2 on
+    if params.get("source_db_name") and capabilities.supports_optional_db_names:
+        warnings.append(
+            "--source_db_name is deprecated and ignored since MigratorXpress 0.7.2: "
+            "the source database is the one in the source auth entry"
+        )
+
+    # --drop_tables_if_exists false is parsed as True before 0.7.2 (type=bool);
+    # the command builder never emits "false", so no warning is needed.
 
     return warnings

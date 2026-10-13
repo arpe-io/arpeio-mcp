@@ -221,8 +221,8 @@ class TestVersionDetector:
         detector.detect()
         caps = detector.capabilities
 
-        # Should get the latest known capabilities (0.16.0.0)
-        assert caps == VERSION_REGISTRY["0.16.0.0"]
+        # Should get the latest known capabilities (0.17.1.0)
+        assert caps is VERSION_REGISTRY["0.17.1.0"]
 
     @patch("src.base.version_detector.subprocess.run")
     def test_capabilities_undetected_version(self, mock_run):
@@ -239,7 +239,7 @@ class TestVersionDetector:
         caps = detector.capabilities
 
         # Should fall back to latest known
-        assert caps == VERSION_REGISTRY["0.16.0.0"]
+        assert caps is VERSION_REGISTRY["0.17.1.0"]
 
     def test_registry_016_source_completeness(self):
         """Test that 0.16.0.0 registry has all expected source types."""
@@ -297,6 +297,41 @@ class TestVersionDetector:
             "Rowid",
         }
         assert caps.parallelism_methods == expected
+
+
+    def test_registry_0171_present(self):
+        """0.17.1.0 is registered and is the latest known version."""
+        assert "0.17.1.0" in VERSION_REGISTRY
+        latest = max(VERSION_REGISTRY, key=lambda v: tuple(int(x) for x in v.split(".")))
+        assert latest == "0.17.1.0"
+
+    def test_registry_0171_same_cli_surface_as_0170(self):
+        """0.17.1 is a bug-fix release: no CLI types/methods/flags changed."""
+        assert VERSION_REGISTRY["0.17.1.0"] == VERSION_REGISTRY["0.17.0.0"]
+
+    def test_registry_0171_has_no_adbc_types(self):
+        """ADBC connection types are not part of FastTransfer 0.17.1."""
+        caps = VERSION_REGISTRY["0.17.1.0"]
+        assert not any(t.startswith("adbc") for t in caps.source_types)
+        assert not any(t.startswith("adbc") for t in caps.target_types)
+
+    @patch("src.base.version_detector.subprocess.run")
+    def test_detect_0171_exact_match(self, mock_run):
+        """Detecting 'FastTransfer Version 0.17.1.0' resolves to its registry entry."""
+        mock_result = Mock()
+        mock_result.stdout = "FastTransfer Version 0.17.1.0\n"
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        detector = VersionDetector(
+            "/fake/binary",
+            VERSION_REGISTRY,
+            r"FastTransfer\s+Version\s+(\d+\.\d+\.\d+\.\d+)",
+            "FastTransfer",
+        )
+        version = detector.detect()
+        assert str(version) == "0.17.1.0"
+        assert detector.capabilities is VERSION_REGISTRY["0.17.1.0"]
 
 
 class TestCheckVersionCompatibility:

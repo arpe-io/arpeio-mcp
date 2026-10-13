@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.6] - 2026-10-13
+
+### Added
+
+- **FastBCP 1.3 support** (registry entry `1.3.0.0`, also covering the 1.3.1 bug-fix release):
+  - New `adbc_netezza` connection type (1.3+), read through the Arpe Netezza ADBC driver. Like the other ADBC types it writes Parquet only, and parallelism follows the native `nzsql` type (`NZDataSlice`).
+  - New `DBPartition` parallel method (1.3+): one chunk per native table partition, for SQL Server, PostgreSQL, Oracle, MySQL and Teradata sources (native and ADBC). It needs `schema` and `table` (no query) and no key column. The validator rejects other sources, which FastBCP would silently run unpartitioned.
+  - Version-compatibility warnings when `adbc_netezza` or `DBPartition` is used against a pre-1.3 binary.
+  - FastBCP 1.3 docs added to doc search; 1.3 is now the version served at `/latest/` (1.2 moved to `/1.2/`).
+- **FastTransfer 0.17.1 support**: registry entry. Bug-fix release (Oracle Ntile date boundaries, 300s timeout on parallel planning queries); no CLI changes.
+- **MigratorXpress 0.7.2 / 0.7.3 support**: registry entries and doc versions.
+  - `source_db_name` and `target_db_name` are optional for a migration run (0.7.2+ reads them from the auth entries). A warning is emitted when they are omitted on an older binary, and `source_db_name` is flagged as deprecated on 0.7.2+.
+  - 0.7.2+ capabilities list SQL Server and PostgreSQL as the only targets (MySQL and Oracle are marked pre-0.7.2). The PostgreSQL tracking DB is now listed.
+  - Workflow suggestions follow the new pre-flight rules: no `copy_fk` (or `all`) for PostgreSQL targets, no constraint step for Netezza sources, and notes for unsupported source/target pairs.
+
+### Fixed
+
+- **MigratorXpress `drop_tables_if_exists="false"` dropped tables on pre-0.7.2 binaries**, which read any value as true. The command builder now leaves the flag out when it is `false` (the default in every version).
+
 ## [0.3.5] - 2026-09-24
 
 ### Fixed

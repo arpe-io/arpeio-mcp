@@ -881,8 +881,33 @@ class TestAdbcCommands:
 
     @pytest.mark.parametrize(
         "source_type,method",
-        [("adbc_pgsql", "Ctid"), ("adbc_oracle", "Rowid"), ("adbc_mssql", "Physloc")],
+        [
+            ("adbc_pgsql", "Ctid"),
+            ("adbc_oracle", "Rowid"),
+            ("adbc_mssql", "Physloc"),
+            ("adbc_netezza", "NZDataSlice"),
+        ],
     )
     def test_parallelism_follows_native_type(self, source_type, method):
         result = suggest_parallelism_method(source_type, False, False, "large")
         assert result["method"] == method
+
+
+def test_dbpartition_command_has_no_key_column(command_builder):
+    """DBPartition emits --method DBPartition and no --distributekeycolumn."""
+    request = ExportRequest(
+        source={
+            "type": "mssql",
+            "server": "localhost",
+            "database": "sales",
+            "schema": "dbo",
+            "table": "orders",
+            "user": "u",
+            "password": "p",
+        },
+        output={"format": "parquet", "directory": "/tmp/out"},
+        options={"method": "DBPartition", "degree": 8},
+    )
+    command = command_builder.build_command(request)
+    assert command[command.index("--method") + 1] == "DBPartition"
+    assert "--distributekeycolumn" not in command

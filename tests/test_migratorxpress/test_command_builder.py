@@ -214,8 +214,15 @@ class TestCommandBuilder:
 
         idx = command.index("--compute_nbrows")
         assert command[idx + 1] == "true"
+        # "false" is the default and is never emitted: binaries before 0.7.2
+        # would read it as True and drop the target tables.
+        assert "--drop_tables_if_exists" not in command
+
+    def test_drop_tables_true_emitted(self, command_builder):
+        params = MigrationParams(**_minimal_params(drop_tables_if_exists="true"))
+        command = command_builder.build_command(params)
         idx = command.index("--drop_tables_if_exists")
-        assert command[idx + 1] == "false"
+        assert command[idx + 1] == "true"
 
     def test_boolean_flags(self, command_builder):
         """Test boolean flags: -f, --basic_diff, --without_xid, --no_banner, --no_progress, --quiet_ft."""
@@ -291,7 +298,7 @@ class TestCommandBuilder:
         assert "--aci_threshold" in command
         assert "--migration_db_mode" in command
         assert "--compute_nbrows" in command
-        assert "--drop_tables_if_exists" in command
+        assert "--drop_tables_if_exists" not in command  # "false" is never emitted
         assert "--load_mode" in command
         assert "-i" in command
         assert "-e" in command
@@ -471,7 +478,7 @@ class TestHelperFunctions:
 
         assert len(caps["Source Databases"]) == 4
         assert len(caps["Target Databases"]) == 4
-        assert len(caps["Migration Database"]) == 1
+        assert len(caps["Migration Database"]) == 2
         assert len(caps["Tasks"]) == 8
         assert len(caps["Migration DB Modes"]) == 3
         assert len(caps["Load Modes"]) == 2
@@ -479,10 +486,10 @@ class TestHelperFunctions:
 
     def test_suggest_workflow_with_constraints(self):
         """Test workflow suggestion with constraints."""
-        workflow = suggest_workflow("oracle", "postgresql", include_constraints=True)
+        workflow = suggest_workflow("oracle", "sqlserver", include_constraints=True)
 
         assert workflow["source_type"] == "oracle"
-        assert workflow["target_type"] == "postgresql"
+        assert workflow["target_type"] == "sqlserver"
         assert workflow["include_constraints"] is True
 
         tasks = [s["task"] for s in workflow["steps"]]
@@ -496,7 +503,7 @@ class TestHelperFunctions:
     def test_suggest_workflow_without_constraints(self):
         """Test workflow suggestion without constraints."""
         workflow = suggest_workflow(
-            "sqlserver", "postgresql", include_constraints=False
+            "sqlserver", "sqlserver", include_constraints=False
         )
 
         assert workflow["include_constraints"] is False

@@ -43,6 +43,7 @@ source database and available key columns:
 | **Random** | No suitable key; approximate distribution via modulo | Yes (numeric) |
 | **NZDataSlice** | Netezza only; uses native data slicing | No |
 | **Timepartition** | FastBCP 0.30+; partitions by time column | Yes (datetime) |
+| **DBPartition** | FastBCP 1.3+; one chunk per native table partition (SQL Server, PostgreSQL, Oracle, MySQL, Teradata); needs schema + table | No |
 
 Default recommendations:
 - Numeric primary key exists → **Ntile**
@@ -74,10 +75,10 @@ parallel (e.g. Spark, Snowflake COPY INTO, bulk loaders).
 ## FastBCP ADBC connection types
 
 FastBCP 1.x adds ADBC connection types that read through the Arpe ADBC \
-drivers: `adbc_mssql` (1.0+), `adbc_pgsql` (1.1+) and `adbc_oracle` (1.2+). \
-They only write **Parquet** output; use the native type (`mssql`, `pgsql`, \
-`oraodp`) for CSV, JSON and the other formats. Parallelism methods follow \
-the native type (Physloc, Ctid, Rowid).
+drivers: `adbc_mssql` (1.0+), `adbc_pgsql` (1.1+), `adbc_oracle` (1.2+) and \
+`adbc_netezza` (1.3+). They only write **Parquet** output; use the native type \
+(`mssql`, `pgsql`, `oraodp`, `nzsql`) for CSV, JSON and the other formats. \
+Parallelism methods follow the native type (Physloc, Ctid, Rowid, NZDataSlice).
 
 ## LakeXpress 0.4.0+ notes
 

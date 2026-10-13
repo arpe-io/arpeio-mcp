@@ -335,7 +335,7 @@ def get_supported_formats() -> Dict[str, Any]:
                 "xlsx",
                 "binary",
             ],
-            "ADBC (adbc_mssql 1.0+, adbc_pgsql 1.1+, adbc_oracle 1.2+)": [
+            "ADBC (adbc_mssql 1.0+, adbc_pgsql 1.1+, adbc_oracle 1.2+, adbc_netezza 1.3+)": [
                 "parquet",
             ],
         },

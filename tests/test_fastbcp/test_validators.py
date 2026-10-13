@@ -25,15 +25,16 @@ from src.fastbcp.validators import (
 class TestSourceConnectionType:
     """Tests for SourceConnectionType enum."""
 
-    def test_all_17_source_types(self):
-        """Test that there are exactly 17 source types (14 native + 3 ADBC)."""
-        assert len(SourceConnectionType) == 17
+    def test_all_18_source_types(self):
+        """Test that there are exactly 18 source types (14 native + 4 ADBC)."""
+        assert len(SourceConnectionType) == 18
 
     def test_adbc_types_exist(self):
         """Test that the FastBCP 1.x ADBC source types exist."""
         assert SourceConnectionType("adbc_mssql") == SourceConnectionType.ADBC_MSSQL
         assert SourceConnectionType("adbc_pgsql") == SourceConnectionType.ADBC_PGSQL
         assert SourceConnectionType("adbc_oracle") == SourceConnectionType.ADBC_ORACLE
+        assert SourceConnectionType("adbc_netezza") == SourceConnectionType.ADBC_NETEZZA
 
     def test_oraodp_exists(self):
         """Test that oraodp source type exists."""
@@ -89,8 +90,9 @@ class TestOtherEnums:
     """Tests for other enum types."""
 
     def test_all_parallelism_methods(self):
-        """Test all 10 parallelism method values exist."""
-        assert len(ParallelismMethod) == 10
+        """Test all 11 parallelism method values exist."""
+        assert len(ParallelismMethod) == 11
+        assert ParallelismMethod("DBPartition") == ParallelismMethod.DB_PARTITION
         assert ParallelismMethod("Ctid") == ParallelismMethod.CTID
         assert ParallelismMethod("None") == ParallelismMethod.NONE
         assert ParallelismMethod("Rowid") == ParallelismMethod.ROWID
@@ -764,7 +766,9 @@ class TestAdbcExportRequest:
             options={"method": method},
         )
 
-    @pytest.mark.parametrize("source_type", ["adbc_mssql", "adbc_pgsql", "adbc_oracle"])
+    @pytest.mark.parametrize(
+        "source_type", ["adbc_mssql", "adbc_pgsql", "adbc_oracle", "adbc_netezza"]
+    )
     def test_parquet_accepted(self, source_type):
         assert self._request(source_type).source.type == source_type
 
@@ -778,7 +782,12 @@ class TestAdbcExportRequest:
 
     @pytest.mark.parametrize(
         "source_type,method",
-        [("adbc_pgsql", "Ctid"), ("adbc_oracle", "Rowid"), ("adbc_mssql", "Physloc")],
+        [
+            ("adbc_pgsql", "Ctid"),
+            ("adbc_oracle", "Rowid"),
+            ("adbc_mssql", "Physloc"),
+            ("adbc_netezza", "NZDataSlice"),
+        ],
     )
     def test_native_parallel_methods_allowed(self, source_type, method):
         assert self._request(source_type, method=method).options.method.value == method
@@ -786,3 +795,52 @@ class TestAdbcExportRequest:
     def test_mismatched_native_method_rejected(self):
         with pytest.raises(ValidationError, match="Ctid"):
             self._request("adbc_oracle", method="Ctid")
+
+
+class TestDBPartitionMethod:
+    """DBPartition (FastBCP 1.3+) reads the native partitions of a table."""
+
+    @staticmethod
+    def _request(source_type, schema="dbo", table="orders", query=None, fmt="parquet"):
+        source = {
+            "type": source_type,
+            "database": "db",
+            "user": "u",
+            "password": "p",
+        }
+        if schema:
+            source["schema"] = schema
+        if table:
+            source["table"] = table
+        if query:
+            source["query"] = query
+        return ExportRequest(
+            source=source,
+            output={"format": fmt, "directory": "/tmp/out"},
+            options={"method": "DBPartition", "degree": 4},
+        )
+
+    @pytest.mark.parametrize(
+        "source_type",
+        ["mssql", "msoledbsql", "pgsql", "pgcopy", "oraodp", "mysql", "teradata",
+         "adbc_mssql", "adbc_pgsql", "adbc_oracle"],
+    )
+    def test_supported_sources(self, source_type):
+        request = self._request(source_type)
+        assert request.options.method == ParallelismMethod.DB_PARTITION
+
+    def test_no_key_column_needed(self):
+        assert self._request("pgsql").options.distribute_key_column is None
+
+    @pytest.mark.parametrize("source_type", ["nzsql", "clickhouse", "hana", "odbc", "adbc_netezza"])
+    def test_unsupported_sources_rejected(self, source_type):
+        with pytest.raises(ValidationError, match="DBPartition"):
+            self._request(source_type)
+
+    def test_schema_required(self):
+        with pytest.raises(ValidationError, match="schema"):
+            self._request("mssql", schema=None)
+
+    def test_query_rejected(self):
+        with pytest.raises(ValidationError):
+            self._request("mssql", table=None, query="SELECT 1")

@@ -32,6 +32,7 @@ class SourceConnectionType(str, Enum):
     ADBC_MSSQL = "adbc_mssql"  # 1.0+
     ADBC_PGSQL = "adbc_pgsql"  # 1.1+
     ADBC_ORACLE = "adbc_oracle"  # 1.2+
+    ADBC_NETEZZA = "adbc_netezza"  # 1.3+
 
 
 # Each ADBC connection type maps to the native type FastBCP rewrites it to
@@ -40,6 +41,7 @@ ADBC_NATIVE_TYPES = {
     "adbc_mssql": "mssql",
     "adbc_pgsql": "pgsql",
     "adbc_oracle": "oraodp",
+    "adbc_netezza": "nzsql",
 }
 
 
@@ -74,6 +76,7 @@ class ParallelismMethod(str, Enum):
     RANGE_ID = "RangeId"  # Numeric range distribution
     ROWID = "Rowid"  # Oracle-specific
     TIMEPARTITION = "Timepartition"  # Time-based partitioning for temporal data
+    DB_PARTITION = "DBPartition"  # Native table partitions (FastBCP 1.3+)
 
 
 class StorageTarget(str, Enum):
@@ -396,6 +399,27 @@ class ExportRequest(BaseModel):
             raise ValueError(
                 f"Method 'NZDataSlice' only works with Netezza sources, not '{source_type}'"
             )
+
+        # DBPartition reads the native partitions of a table
+        if method == ParallelismMethod.DB_PARTITION:
+            if source_type not in [
+                "mssql",
+                "msoledbsql",
+                "pgsql",
+                "pgcopy",
+                "oraodp",
+                "mysql",
+                "teradata",
+            ]:
+                raise ValueError(
+                    f"Method 'DBPartition' only works with SQL Server, PostgreSQL, "
+                    f"Oracle, MySQL and Teradata sources, not '{self.source.type}'"
+                )
+            if not self.source.schema or not self.source.table:
+                raise ValueError(
+                    "Method 'DBPartition' requires both 'schema' and 'table' "
+                    "(it reads the table's partitions; 'query' is not allowed)"
+                )
 
         # Physloc is SQL Server-specific
         if method == ParallelismMethod.PHYSLOC and source_type not in [

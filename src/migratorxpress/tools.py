@@ -111,9 +111,17 @@ def _build_command_explanation(params: MigrationParams) -> str:
             parts.append("License key provided (masked in display)")
         return "\n".join(f"{i+1}. {part}" for i, part in enumerate(parts))
 
-    parts.append(
-        f"Migrate from source database '{params.source_db_name}' to target database '{params.target_db_name}'"
+    source_desc = (
+        f"source database '{params.source_db_name}'"
+        if params.source_db_name
+        else f"the source database of auth entry '{params.source_db_auth_id}'"
     )
+    target_desc = (
+        f"target database '{params.target_db_name}'"
+        if params.target_db_name
+        else f"the target database of auth entry '{params.target_db_auth_id}'"
+    )
+    parts.append(f"Migrate from {source_desc} to {target_desc}")
 
     # Source/target schemas
     if params.source_schema_name:
@@ -211,7 +219,10 @@ def create_tools(
                     },
                     "source_db_name": {
                         "type": "string",
-                        "description": "Source database name to migrate from",
+                        "description": (
+                            "Source database name to migrate from. Required before 0.7.2; "
+                            "deprecated and ignored from 0.7.2 (the source auth entry's database is used)"
+                        ),
                     },
                     "target_db_auth_id": {
                         "type": "string",
@@ -219,7 +230,10 @@ def create_tools(
                     },
                     "target_db_name": {
                         "type": "string",
-                        "description": "Target database name to migrate to",
+                        "description": (
+                            "Target database name to migrate to. Required before 0.7.2; optional from "
+                            "0.7.2, where it defaults to the target auth entry's database and must match it"
+                        ),
                     },
                     "migration_db_auth_id": {
                         "type": "string",
@@ -283,7 +297,10 @@ def create_tools(
                     "drop_tables_if_exists": {
                         "type": "string",
                         "enum": ["true", "false"],
-                        "description": "Drop target tables before creating them",
+                        "description": (
+                            "Drop target tables before creating them. Before 0.7.2 any value, "
+                            "including 'false', is read as true: omit it instead of passing 'false'"
+                        ),
                     },
                     "load_mode": {
                         "type": "string",
@@ -402,9 +419,11 @@ def create_tools(
                         "default": "linux",
                     },
                 },
-                # source_db_auth_id, source_db_name, target_db_auth_id and
-                # target_db_name are required for a migration run but optional
-                # with upgrade_migdb=true; MigrationParams enforces that.
+                # source_db_auth_id and target_db_auth_id are required for a
+                # migration run but optional with upgrade_migdb=true;
+                # MigrationParams enforces that. The database names are
+                # version-gated (required before 0.7.2) by
+                # check_version_compatibility.
                 "required": [
                     "auth_file",
                     "migration_db_auth_id",
@@ -931,6 +950,13 @@ def create_tools(
             response.append("```")
             response.append("")
 
+        if workflow.get("notes"):
+            response.append("## Notes:")
+            response.append("")
+            for note in workflow["notes"]:
+                response.append(f"- {note}")
+            response.append("")
+
         return [TextContent(type="text", text="\n".join(response))]
 
     async def handle_get_version(arguments: Dict[str, Any]) -> list[TextContent]:
@@ -1003,6 +1029,11 @@ def create_tools(
             f"- No Progress: {'Yes' if caps.get('supports_no_progress') else 'No'}",
             f"- Quiet FT: {'Yes' if caps.get('supports_quiet_ft') else 'No'}",
             f"- Log Dir: {'Yes' if caps.get('supports_log_dir') else 'No'}",
+            f"- Project: {'Yes' if caps.get('supports_project') else 'No'}",
+            f"- PostgreSQL Tracking DB: {'Yes' if caps.get('supports_postgres_migration_db') else 'No'}",
+            f"- Upgrade Migration DB: {'Yes' if caps.get('supports_upgrade_migdb') else 'No'}",
+            f"- Optional DB Names: {'Yes' if caps.get('supports_optional_db_names') else 'No'}",
+            f"- drop_tables_if_exists true/false: {'Yes' if caps.get('supports_drop_tables_bool_parsing') else 'No'}",
         ]
 
         return [TextContent(type="text", text="\n".join(response))]

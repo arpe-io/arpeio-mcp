@@ -74,8 +74,8 @@ class TestUpgradeMigdbValidation:
 
     def test_run_missing_single_field_rejected(self):
         p = _run_params()
-        del p["target_db_name"]
-        with pytest.raises(ValidationError, match="target_db_name"):
+        del p["target_db_auth_id"]
+        with pytest.raises(ValidationError, match="target_db_auth_id"):
             MigrationParams(**p)
 
     def test_upgrade_with_task_list_rejected(self):

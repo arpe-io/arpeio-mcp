@@ -182,7 +182,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             "type": {
                                 "type": "string",
                                 "enum": [e.value for e in SourceConnectionType],
-                                "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL). ADBC types 'adbc_mssql' (1.0+), 'adbc_pgsql' (1.1+) and 'adbc_oracle' (1.2+) read the same databases through the Arpe ADBC drivers and write parquet output only.",
+                                "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL). ADBC types 'adbc_mssql' (1.0+), 'adbc_pgsql' (1.1+), 'adbc_oracle' (1.2+) and 'adbc_netezza' (1.3+) read the same databases through the Arpe ADBC drivers and write parquet output only.",
                             },
                             "server": {
                                 "type": "string",
@@ -302,7 +302,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             "method": {
                                 "type": "string",
                                 "enum": [e.value for e in ParallelismMethod],
-                                "description": "Parallelism method. Ntile: even distribution on numeric key. DataDriven: distinct value partitions, works with any data type. Physloc: SQL Server physical location (no key needed). Ctid: PostgreSQL physical tuple ID (no key needed). Rowid: Oracle physical ROWID (no key needed). RangeId: numeric min/max range. Random: modulo-based approximate distribution. Timepartition: partition by time column (FastBCP 0.30+). NZDataSlice: Netezza native slicing. None: single-threaded. Call `fastbcp_info` with action='parallelism' if unsure.",
+                                "description": "Parallelism method. Ntile: even distribution on numeric key. DataDriven: distinct value partitions, works with any data type. Physloc: SQL Server physical location (no key needed). Ctid: PostgreSQL physical tuple ID (no key needed). Rowid: Oracle physical ROWID (no key needed). RangeId: numeric min/max range. Random: modulo-based approximate distribution. Timepartition: partition by time column (FastBCP 0.30+). NZDataSlice: Netezza native slicing. DBPartition: one chunk per native table partition, for SQL Server, PostgreSQL, Oracle, MySQL and Teradata; needs schema and table, no key (FastBCP 1.3+). None: single-threaded. Call `fastbcp_info` with action='parallelism' if unsure.",
                                 "default": "None",
                             },
                             "distribute_key_column": {
@@ -1012,6 +1012,10 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "- **Recommended parallelism**: `Rowid`, as for `oraodp`\n"
                 "- Oracle native network encryption is auto-detected; override with "
                 "`FASTBCP_ADBC_ENCRYPTION` / `FASTBCP_ADBC_DATA_INTEGRITY`"
+            ),
+            "adbc_netezza": (
+                "- **ADBC driver**: parquet output only (use `nzsql` for other formats)\n"
+                "- **Recommended parallelism**: `NZDataSlice`, as for `nzsql`"
             ),
             "adbc_mssql": (
                 "- **ADBC driver**: parquet output only (use `mssql` for other formats)\n"
