@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.9] - Unreleased
+
+### Added
+
+- **FastTransfer 0.18 support** (registry entries `0.18.0.0` and `0.18.1.0`; 0.18.1 is a security and maintenance release with no CLI changes):
+  - New `DBPartition` parallel method (0.18+): one stream per native table partition, biggest first, for SQL Server (`mssql`, `msoledbsql`), PostgreSQL (`pgsql`, `pgcopy`), Oracle (`oraodp`), MySQL (`mysql`) and Teradata (`teradata`, row partitioning only) sources. It needs `schema` and `table` (no query or file input) and no key column. The validator rejects other sources, which FastTransfer would silently run as a single stream.
+  - New `Timepartition` parallel method (0.18+): one stream per year, month, day or ISO week of a date column, biggest first. `distribute_key_column` is a tuple, `(date_col,year)`, `(date_col,year,month)`, `(date_col,year,month,day)` or `(date_col,year,week)`; the validator checks it and normalizes spacing and case of the time parts. Works with a table or a query.
+  - Version-compatibility warnings when `DBPartition` or `Timepartition` is used against a pre-0.18 binary.
+  - `FASTTRANSFER_DATEFORMAT` (0.18+, `yyyy-MM-dd` or `yyyyMMdd`, format of the `Timepartition` date bounds) is mentioned in the preview explanation and the workflow tips.
+  - Workflow tips: `DBPartition` for partitioned SQL Server, PostgreSQL, Oracle, MySQL and Teradata tables (new Teradata tip), `Timepartition` for date columns, and an `msbulk` target tip on the sorted hint, no longer sent to a partitioned rowstore clustered index since 0.18 (`FASTTRANSFER_SORTEDINPUT=true` forces it).
+  - FastTransfer 0.18 docs added to doc search; 0.18 is now the version served at `/latest/` (0.17 stays at `/0.17/`).
+
+### Changed
+
+- Server instructions list `DBPartition` and `Timepartition` for FastTransfer 0.18+ as well as FastBCP.
+
 ## [0.3.8] - 2026-10-22
 
 ### Added

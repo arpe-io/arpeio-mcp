@@ -5,6 +5,7 @@ This module provides Pydantic models and enums for validating
 all FastTransfer parameters and ensuring parameter compatibility.
 """
 
+import re
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -59,6 +60,44 @@ class ParallelismMethod(str, Enum):
     RANDOM = "Random"  # Random distribution using modulo
     RANGE_ID = "RangeId"  # Numeric range distribution
     ROWID = "Rowid"  # Oracle-specific
+    DB_PARTITION = "DBPartition"  # Native table partitions (FastTransfer 0.18+)
+    TIMEPARTITION = "Timepartition"  # Time parts of a date column (FastTransfer 0.18+)
+
+
+# Source types whose native partitions DBPartition can read (FastTransfer 0.18).
+# FastTransfer falls back to None (single stream) on any other source.
+DB_PARTITION_SOURCES = frozenset(
+    ["mssql", "msoledbsql", "pgsql", "pgcopy", "oraodp", "mysql", "teradata"]
+)
+
+# Timepartition --distributekeycolumn tuple: (date_column,<time parts>), where the
+# time parts are year | year,month | year,month,day | year,week.
+TIMEPARTITION_GRANULARITIES = (
+    ("year",),
+    ("year", "month"),
+    ("year", "month", "day"),
+    ("year", "week"),
+)
+_TIMEPARTITION_TUPLE = re.compile(r"^\(\s*(?P<body>[^()]+?)\s*\)$")
+
+
+def normalize_timepartition_key(value: str) -> str:
+    """Validate a Timepartition tuple and return it in the documented form.
+
+    Accepts e.g. ``"(order_date, year, month)"`` and returns
+    ``"(order_date,year,month)"``. Raises ValueError on any other shape.
+    """
+    match = _TIMEPARTITION_TUPLE.match(value.strip())
+    parts = [p.strip() for p in match.group("body").split(",")] if match else []
+    column, granularity = (parts[0], tuple(p.lower() for p in parts[1:])) if parts else ("", ())
+    if not column or granularity not in TIMEPARTITION_GRANULARITIES:
+        raise ValueError(
+            "Method 'Timepartition' needs distribute_key_column as a tuple of a "
+            "date column and time parts: '(date_column,year)', "
+            "'(date_column,year,month)', '(date_column,year,month,day)' or "
+            f"'(date_column,year,week)', not '{value}'"
+        )
+    return "(" + ",".join((column,) + granularity) + ")"
 
 
 class LoadMode(str, Enum):
@@ -230,11 +269,22 @@ class TransferOptions(BaseModel):
             ParallelismMethod.RANDOM,
             ParallelismMethod.RANGE_ID,
             ParallelismMethod.NTILE,
+            ParallelismMethod.TIMEPARTITION,
         }
 
         if self.method in methods_requiring_key and not self.distribute_key_column:
+            hint = (
+                ", a tuple such as '(order_date,year,month)'"
+                if self.method == ParallelismMethod.TIMEPARTITION
+                else ""
+            )
             raise ValueError(
-                f"Method '{self.method.value}' requires distribute_key_column"
+                f"Method '{self.method.value}' requires distribute_key_column{hint}"
+            )
+
+        if self.method == ParallelismMethod.TIMEPARTITION:
+            self.distribute_key_column = normalize_timepartition_key(
+                self.distribute_key_column
             )
 
         return self
@@ -326,6 +376,23 @@ class TransferRequest(BaseModel):
             raise ValueError(
                 f"Method 'Physloc' only works with SQL Server sources (mssql, oledb, odbc, msoledbsql), not '{source_type}'"
             )
+
+        # DBPartition reads the native partitions of a table (FastTransfer 0.18+).
+        # FastTransfer would silently fall back to None on other sources.
+        if method == ParallelismMethod.DB_PARTITION:
+            if source_type not in DB_PARTITION_SOURCES:
+                raise ValueError(
+                    f"Method 'DBPartition' only works with SQL Server (mssql, msoledbsql), "
+                    f"PostgreSQL (pgsql, pgcopy), Oracle (oraodp), MySQL (mysql) and "
+                    f"Teradata (teradata) sources, not '{self.source.type}' "
+                    f"(FastTransfer would fall back to a single stream)"
+                )
+            if not self.source.schema or not self.source.table:
+                raise ValueError(
+                    "Method 'DBPartition' requires both 'schema' and 'table' "
+                    "(it reads the table's partitions; 'query' and 'file_input' "
+                    "are not allowed)"
+                )
 
         return self
 

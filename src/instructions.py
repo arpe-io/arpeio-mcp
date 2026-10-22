@@ -45,8 +45,8 @@ source database and available key columns:
 | **RangeId** | Numeric key with known min/max range | Yes (numeric) |
 | **Random** | No suitable key; approximate distribution via modulo | Yes (numeric) |
 | **NZDataSlice** | Netezza only; uses native data slicing | No |
-| **Timepartition** | FastBCP 0.30+; partitions by time column | Yes (datetime) |
-| **DBPartition** | FastBCP 1.3+; one chunk per native table partition (SQL Server, PostgreSQL, Oracle, MySQL, Teradata); needs schema + table | No |
+| **Timepartition** | FastBCP 0.30+, FastTransfer 0.18+; partitions by time column (FastTransfer key: tuple such as `(date_col,year,month)`) | Yes (datetime) |
+| **DBPartition** | FastBCP 1.3+, FastTransfer 0.18+; one chunk per native table partition (SQL Server, PostgreSQL, Oracle, MySQL, Teradata); needs schema + table | No |
 | **Physical** | FastBCP 1.4+; physical row location, resolved to PhysLoc / Ctid / Rowid / NZDataSlice from the connection type (SQL Server, PostgreSQL, Oracle, Netezza only); needs schema + table | No |
 
 Default recommendations:

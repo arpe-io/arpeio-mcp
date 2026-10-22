@@ -225,12 +225,12 @@ def create_tools(
                             "method": {
                                 "type": "string",
                                 "enum": [e.value for e in ParallelismMethod],
-                                "description": "Parallelism method. Ntile: even distribution on numeric key. DataDriven: distinct value partitions, works with any data type. PhysLoc/Physloc: SQL Server physical location (no key needed). Ctid: PostgreSQL physical tuple ID (no key needed). Rowid: Oracle physical ROWID (no key needed). RangeId: numeric min/max range. Random: modulo-based approximate distribution. NZDataSlice: Netezza native slicing. None: single-threaded. Call `fasttransfer_info` with action='parallelism' if unsure.",
+                                "description": "Parallelism method. Ntile: even distribution on numeric key. DataDriven: distinct value partitions, works with any data type. PhysLoc/Physloc: SQL Server physical location (no key needed). Ctid: PostgreSQL physical tuple ID (no key needed). Rowid: Oracle physical ROWID (no key needed). RangeId: numeric min/max range. Random: modulo-based approximate distribution. NZDataSlice: Netezza native slicing. DBPartition: one stream per native table partition, biggest first, for SQL Server (mssql, msoledbsql), PostgreSQL (pgsql, pgcopy), Oracle (oraodp), MySQL (mysql) and Teradata (teradata, row partitioning only); needs schema and table (no query), no key; an unpartitioned table falls back to a single stream (FastTransfer 0.18+). Timepartition: one stream per year, month, day or ISO week of a date column, biggest first; distribute_key_column is a tuple such as '(order_date,year,month)'; works with a table or a query (FastTransfer 0.18+). None: single-threaded. Call `fasttransfer_info` with action='parallelism' if unsure.",
                                 "default": "None",
                             },
                             "distribute_key_column": {
                                 "type": "string",
-                                "description": "Column name used to partition data across threads. Required when method is RangeId, Random, Ntile, or DataDriven. Should be a high-cardinality column (e.g., primary key) for even distribution. Not needed for Ctid, Rowid, Physloc, or None methods.",
+                                "description": "Column name used to partition data across threads. Required when method is RangeId, Random, Ntile, DataDriven or Timepartition. Should be a high-cardinality column (e.g., primary key) for even distribution. For Timepartition (0.18+) it is a tuple of a date column and time parts: '(col,year)', '(col,year,month)', '(col,year,month,day)' or '(col,year,week)'. Not needed for Ctid, Rowid, Physloc, NZDataSlice, DBPartition or None methods.",
                             },
                             "degree": {
                                 "type": "integer",
@@ -893,21 +893,40 @@ def create_tools(
         db_tips = {
             "pgsql": (
                 "- **Recommended parallelism**: `Ctid` (PostgreSQL-native, no key column needed)\n"
-                "- Works on any table by splitting on physical page ranges"
+                "- Works on any table by splitting on physical page ranges\n"
+                "- Partitioned table: `DBPartition` reads each leaf partition in its own stream (FastTransfer 0.18+)"
             ),
             "oraodp": (
                 "- **Recommended parallelism**: `Rowid` (Oracle-native, no key column needed)\n"
-                "- Splits by Oracle physical rowid ranges"
+                "- Splits by Oracle physical rowid ranges\n"
+                "- Partitioned table: `DBPartition` reads each partition / sub-partition in its own stream (FastTransfer 0.18+)"
             ),
             "mssql": (
                 "- **Recommended parallelism**: `Physloc` (SQL Server-native, no key column needed)\n"
-                "- If table has an `IDENTITY` column, `RangeId` is also excellent"
+                "- If table has an `IDENTITY` column, `RangeId` is also excellent\n"
+                "- Partitioned table: `DBPartition` reads each partition of the partition scheme in its own stream (FastTransfer 0.18+)"
             ),
             "mysql": (
                 "- **Recommended parallelism**: `RangeId` on the primary key\n"
-                "- MySQL does not support Ctid/Rowid/Physloc"
+                "- MySQL does not support Ctid/Rowid/Physloc\n"
+                "- Partitioned table: `DBPartition` (FastTransfer 0.18+)"
+            ),
+            "teradata": (
+                "- **Recommended parallelism**: `DBPartition` on a PPI / MLPPI table (row partitioning only, FastTransfer 0.18+), "
+                "else `Ntile` or `RangeId` on a key\n"
+                "- Teradata does not support Ctid/Rowid/Physloc"
             ),
         }
+
+        # DBPartition / Timepartition (FastTransfer 0.18+) apply across sources
+        partition_tip = (
+            "- Date column: `Timepartition` with `distribute_key_column` '(date_col,year,month)' "
+            "gives one stream per month, biggest first; it works with a table or a query "
+            "(FastTransfer 0.18+). Pick a granularity giving several times more groups than the degree. "
+            "Date bounds are sent as `yyyy-MM-dd`; set `FASTTRANSFER_DATEFORMAT=yyyyMMdd` if the source needs the compact format\n"
+            "- `DBPartition` needs schema and table (no query) and falls back to a single stream "
+            "if the table is not partitioned"
+        )
 
         db_tip = db_tips.get(source_type, (
             "- Call `fasttransfer_info` with action='parallelism' with your table characteristics for a specific recommendation"
@@ -925,6 +944,12 @@ def create_tools(
         # Target-specific tips
         target_tips = {
             "mssql": "- Consider using `use_work_tables: true` for Clustered Columnstore Index targets",
+            "msbulk": (
+                "- Consider using `use_work_tables: true` for Clustered Columnstore Index targets\n"
+                "- Partitioned target: `DataDriven`, `DBPartition` and `Timepartition` send a sorted hint on the "
+                "partition column, except to a rowstore clustered index (FastTransfer 0.18+). Set "
+                "`FASTTRANSFER_SORTEDINPUT=true` only if the source rows are really sorted on that column"
+            ),
             "pgsql": "- PostgreSQL targets work well with all load modes",
             "oraodp": "- Oracle targets support direct-path loading for maximum speed",
         }
@@ -945,6 +970,7 @@ def create_tools(
             "Call `fasttransfer_info` with action='parallelism' with your table characteristics.",
             "",
             db_tip,
+            partition_tip,
             size_tip,
             "",
             "### 3. Preview the command",
@@ -1052,7 +1078,18 @@ def _build_transfer_explanation(request: TransferRequest) -> str:
     # Parallelism
     if request.options.method.value != "None":
         parallel_desc = f"Parallelism: {request.options.method.value} method"
-        if request.options.distribute_key_column:
+        if request.options.method.value == "Timepartition":
+            parallel_desc += (
+                f" on {request.options.distribute_key_column} (one stream per time group, "
+                f"biggest first; date bounds sent as yyyy-MM-dd unless "
+                f"FASTTRANSFER_DATEFORMAT=yyyyMMdd)"
+            )
+        elif request.options.method.value == "DBPartition":
+            parallel_desc += (
+                " (one stream per native partition, biggest first; "
+                "a single stream if the table is not partitioned)"
+            )
+        elif request.options.distribute_key_column:
             parallel_desc += f" on column '{request.options.distribute_key_column}'"
         parallel_desc += f" with degree {request.options.degree}"
         parts.append(parallel_desc)

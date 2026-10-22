@@ -221,8 +221,8 @@ class TestVersionDetector:
         detector.detect()
         caps = detector.capabilities
 
-        # Should get the latest known capabilities (0.17.1.0)
-        assert caps is VERSION_REGISTRY["0.17.1.0"]
+        # Should get the latest known capabilities (0.18.1.0)
+        assert caps is VERSION_REGISTRY["0.18.1.0"]
 
     @patch("src.base.version_detector.subprocess.run")
     def test_capabilities_undetected_version(self, mock_run):
@@ -239,7 +239,7 @@ class TestVersionDetector:
         caps = detector.capabilities
 
         # Should fall back to latest known
-        assert caps is VERSION_REGISTRY["0.17.1.0"]
+        assert caps is VERSION_REGISTRY["0.18.1.0"]
 
     def test_registry_016_source_completeness(self):
         """Test that 0.16.0.0 registry has all expected source types."""
@@ -300,10 +300,53 @@ class TestVersionDetector:
 
 
     def test_registry_0171_present(self):
-        """0.17.1.0 is registered and is the latest known version."""
+        """0.17.1.0 is registered."""
         assert "0.17.1.0" in VERSION_REGISTRY
+
+    def test_registry_0181_is_latest(self):
+        """0.18.0.0 and 0.18.1.0 are registered; 0.18.1.0 is the latest known version."""
+        assert "0.18.0.0" in VERSION_REGISTRY
+        assert "0.18.1.0" in VERSION_REGISTRY
         latest = max(VERSION_REGISTRY, key=lambda v: tuple(int(x) for x in v.split(".")))
-        assert latest == "0.17.1.0"
+        assert latest == "0.18.1.0"
+
+    def test_registry_018_adds_partition_methods(self):
+        """0.18 adds DBPartition and Timepartition; types are unchanged from 0.17.1."""
+        old = VERSION_REGISTRY["0.17.1.0"]
+        new = VERSION_REGISTRY["0.18.0.0"]
+        assert new.parallelism_methods - old.parallelism_methods == {"DBPartition", "Timepartition"}
+        assert old.parallelism_methods <= new.parallelism_methods
+        assert new.source_types == old.source_types
+        assert new.target_types == old.target_types
+
+    def test_registry_0181_same_cli_surface_as_0180(self):
+        """0.18.1 is a security/maintenance release: no CLI types/methods/flags changed."""
+        assert VERSION_REGISTRY["0.18.1.0"] == VERSION_REGISTRY["0.18.0.0"]
+
+    def test_registry_pre_018_has_no_partition_methods(self):
+        for ver in ("0.16.0.0", "0.17.0.0", "0.17.1.0"):
+            methods = VERSION_REGISTRY[ver].parallelism_methods
+            assert "DBPartition" not in methods
+            assert "Timepartition" not in methods
+
+    @pytest.mark.parametrize("ver", ["0.18.0.0", "0.18.1.0"])
+    @patch("src.base.version_detector.subprocess.run")
+    def test_detect_018_exact_match(self, mock_run, ver):
+        """Detecting 'FastTransfer Version 0.18.x.0' resolves to its registry entry."""
+        mock_result = Mock()
+        mock_result.stdout = f"FastTransfer Version {ver}\n"
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        detector = VersionDetector(
+            "/fake/binary",
+            VERSION_REGISTRY,
+            r"FastTransfer\s+Version\s+(\d+\.\d+\.\d+\.\d+)",
+            "FastTransfer",
+        )
+        version = detector.detect()
+        assert str(version) == ver
+        assert detector.capabilities is VERSION_REGISTRY[ver]
 
     def test_registry_0171_same_cli_surface_as_0170(self):
         """0.17.1 is a bug-fix release: no CLI types/methods/flags changed."""
@@ -358,5 +401,47 @@ class TestCheckVersionCompatibility:
         caps = VERSION_REGISTRY["0.16.0.0"]
         warnings = check_version_compatibility(
             {"source": {"type": "pgsql"}}, caps, None
+        )
+        assert warnings == []
+
+
+class TestPartitionMethodVersionGates:
+    """DBPartition and Timepartition need FastTransfer 0.18.0.0+."""
+
+    @pytest.mark.parametrize("method", ["DBPartition", "Timepartition"])
+    @pytest.mark.parametrize("ver", ["0.16.0.0", "0.17.0.0", "0.17.1.0"])
+    def test_warns_on_pre_018(self, method, ver):
+        caps = VERSION_REGISTRY[ver]
+        version = ToolVersion.parse(ver)
+        warnings = check_version_compatibility(
+            {"source": {"type": "mssql"}, "options": {"method": method}}, caps, version
+        )
+        assert len(warnings) == 1
+        assert method in warnings[0]
+        assert "0.18.0.0" in warnings[0]
+        assert ver in warnings[0]
+
+    @pytest.mark.parametrize("method", ["DBPartition", "Timepartition"])
+    @pytest.mark.parametrize("ver", ["0.18.0.0", "0.18.1.0"])
+    def test_no_warning_on_018(self, method, ver):
+        caps = VERSION_REGISTRY[ver]
+        warnings = check_version_compatibility(
+            {"options": {"method": method}}, caps, ToolVersion.parse(ver)
+        )
+        assert warnings == []
+
+    def test_unknown_version_string(self):
+        """Old capabilities with no detected version report 'unknown'."""
+        warnings = check_version_compatibility(
+            {"options": {"method": "DBPartition"}}, VERSION_REGISTRY["0.17.1.0"], None
+        )
+        assert warnings and "unknown" in warnings[0]
+
+    @pytest.mark.parametrize("method", ["Ctid", "Rowid", "Physloc", "NZDataSlice", "Ntile", "None"])
+    def test_older_methods_never_warn(self, method):
+        warnings = check_version_compatibility(
+            {"options": {"method": method}},
+            VERSION_REGISTRY["0.16.0.0"],
+            ToolVersion.parse("0.16.0.0"),
         )
         assert warnings == []
