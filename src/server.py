@@ -7,6 +7,8 @@ A Model Context Protocol (MCP) server that exposes all Arpe.io data tools:
 - FastTransfer: High-performance parallel data transfer between databases
 - LakeXpress: Automated database-to-cloud data pipeline as Parquet
 - MigratorXpress: Cross-platform database migration with parallel transfer
+- Arpe ADBC drivers: ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza and
+  ArpeTeradata (reference information; the drivers are libraries, not CLIs)
 """
 
 import os
@@ -39,6 +41,8 @@ from src.lakexpress.command_builder import CommandBuilder as LakeXpressCommandBu
 from src.lakexpress.tools import create_tools as create_lakexpress_tools
 from src.migratorxpress.command_builder import CommandBuilder as MigratorXpressCommandBuilder
 from src.migratorxpress.tools import create_tools as create_migratorxpress_tools
+from src.adbc.drivers import ADBC_DRIVERS
+from src.adbc.tools import create_tools as create_adbc_tools
 from src.doc_search import SearchEngine, create_tools as create_doc_search_tools
 from src.base.release_notes_handler import build_release_notes_tool
 
@@ -116,12 +120,18 @@ _init_tool("FastTransfer", FastTransferCommandBuilder, create_fasttransfer_tools
 _init_tool("LakeXpress", LakeXpressCommandBuilder, create_lakexpress_tools, TOOL_CONFIGS["lakexpress"])
 _init_tool("MigratorXpress", MigratorXpressCommandBuilder, create_migratorxpress_tools, TOOL_CONFIGS["migratorxpress"])
 
+# Arpe ADBC drivers: reference tool only (no binary to configure)
+_adbc_tools, _adbc_handler = create_adbc_tools()
+all_tools.extend(_adbc_tools)
+tool_handlers.append(_adbc_handler)
+logger.info(f"ADBC drivers: {len(_adbc_tools)} tools registered")
+
 # Add the meta tools
 all_tools.append(
     Tool(
         name="arpe_get_status",
         description=(
-            "Show the status of all four Arpe.io tools "
+            "Show the status of the four Arpe.io CLI tools "
             "(FastBCP, FastTransfer, LakeXpress, MigratorXpress). "
             "All tools work in command-builder mode by default (no binary needed). "
             "If a binary is installed, execution is also available. "
@@ -183,8 +193,8 @@ all_tools.append(
                 },
                 "product": {
                     "type": "string",
-                    "enum": ["fastbcp", "fasttransfer", "lakexpress", "migratorxpress", "all"],
-                    "description": "Override auto-detection and show the workflow for a specific product. If omitted, the tool selects based on use_case.",
+                    "enum": ["fastbcp", "fasttransfer", "lakexpress", "migratorxpress", "adbc", "all"],
+                    "description": "Override auto-detection and show the workflow for a specific product ('adbc' for the Arpe ADBC drivers). If omitted, the tool selects based on use_case.",
                 },
             },
             "required": ["use_case"],
@@ -199,9 +209,11 @@ all_tools.extend(_doc_tools)
 tool_handlers.append(_doc_handler)
 logger.info(f"DocSearch: {len(_doc_tools)} tools registered")
 
-# Unified release-notes tool (replaces 4 per-product tools)
+# Unified release-notes tool (replaces 4 per-product tools). ADBC drivers are
+# addressed by load name and read from their "What's new" docs page.
+_RN_PRODUCTS = ["fastbcp", "fasttransfer", "lakexpress", "migratorxpress", *ADBC_DRIVERS]
 _rn_product_handlers: dict[str, Any] = {}
-for _product in ("fastbcp", "fasttransfer", "lakexpress", "migratorxpress"):
+for _product in _RN_PRODUCTS:
     _, _rn_handler = build_release_notes_tool(_product, search_engine)
     _rn_product_handlers[_product] = _rn_handler
 
@@ -211,7 +223,9 @@ all_tools.append(
         description=(
             "Return release-notes chunks for any Arpe.io product. "
             "Pass `product` to select which tool and optionally `version` to filter "
-            "to a specific release. Read-only; queries the local docs cache."
+            "to a specific release. ADBC drivers are selected by load name "
+            "(arpemssql, arpepgsql, arpeoracle, arpenz, arpeteradata) and return "
+            "their \"What's new\" history. Read-only; queries the local docs cache."
         ),
         annotations=ToolAnnotations(
             readOnlyHint=True,
@@ -236,12 +250,16 @@ all_tools.append(
             "properties": {
                 "product": {
                     "type": "string",
-                    "enum": ["fastbcp", "fasttransfer", "lakexpress", "migratorxpress"],
-                    "description": "Which product's release notes to retrieve.",
+                    "enum": _RN_PRODUCTS,
+                    "description": (
+                        "Which product's release notes to retrieve. ADBC drivers use their load name: "
+                        "arpemssql (ArpeMSSQL), arpepgsql (ArpePGSQL), arpeoracle (ArpeOracle), "
+                        "arpenz (ArpeNetezza), arpeteradata (ArpeTeradata)."
+                    ),
                 },
                 "version": {
                     "type": "string",
-                    "description": "Optional version string (e.g. '0.31', '0.4'). Omit for the newest indexed version.",
+                    "description": "Optional version string (e.g. '0.31', '0.4', '0.3.5'). Omit for the newest indexed version (the whole release history for an ADBC driver).",
                 },
             },
             "required": ["product"],
@@ -259,7 +277,7 @@ async def _release_notes_dispatch(name: str, arguments: dict):
     handler = _rn_product_handlers.get(product)
     if handler is None:
         return respond(
-            f"Unknown product '{product}'. Valid: fastbcp, fasttransfer, lakexpress, migratorxpress.",
+            f"Unknown product '{product}'. Valid: {', '.join(_RN_PRODUCTS)}.",
             {"status": "error", "tool": "arpe_release_notes",
              "error": f"Unknown product '{product}'."},
         )
@@ -412,6 +430,7 @@ from src.fastbcp.command_builder import get_supported_formats as get_fastbcp_for
 from src.fasttransfer.command_builder import get_supported_combinations as get_fasttransfer_combinations
 from src.lakexpress.command_builder import get_supported_capabilities as get_lakexpress_capabilities
 from src.migratorxpress.command_builder import get_supported_capabilities as get_migratorxpress_capabilities
+from src.adbc.drivers import get_supported_capabilities as get_adbc_capabilities
 
 _RESOURCE_BASE = "arpeio://capabilities"
 
@@ -440,6 +459,12 @@ _RESOURCES = [
         description="Supported source/target databases, tasks, and modes for MigratorXpress",
         mimeType="application/json",
     ),
+    Resource(
+        uri=f"{_RESOURCE_BASE}/adbc-drivers",
+        name="Arpe ADBC Drivers",
+        description="ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza and ArpeTeradata: versions, load names, URIs and FastBCP connection types",
+        mimeType="application/json",
+    ),
 ]
 
 
@@ -460,6 +485,8 @@ async def read_resource(uri: str) -> list[TextResourceContents]:
         data = get_lakexpress_capabilities()
     elif uri == f"{_RESOURCE_BASE}/migratorxpress-capabilities":
         data = get_migratorxpress_capabilities()
+    elif uri == f"{_RESOURCE_BASE}/adbc-drivers":
+        data = get_adbc_capabilities()
     else:
         raise ValueError(f"Unknown resource: {uri}")
 
@@ -619,6 +646,18 @@ async def handle_arpe_quick_start(arguments: dict) -> list[TextContent]:
                 "4. `migratorxpress_execute_command` — run the migration command",
             ],
         },
+        "adbc": {
+            "name": "Arpe ADBC drivers",
+            "purpose": "Native ADBC drivers returning Apache Arrow: ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza, ArpeTeradata",
+            "when": "Read or bulk-load SQL Server, PostgreSQL, Oracle, Netezza or Teradata as Arrow from your own code (Python, C/C++, C#, Go, Java, R, Rust)",
+            "warning": "To export tables to Parquet files without writing code, FastBCP's adbc_* connection types already use these drivers.",
+            "params": "driver (load name), connection URI or options, Arpeio licence",
+            "steps": [
+                "1. `adbc_info` — list the drivers, then call it with `driver` for the URI, install command and licence setup",
+                "2. `search_docs` — options, data types and examples from the ADBC drivers docs",
+                "3. `arpe_release_notes` (product=<load name>) — what changed in a driver release",
+            ],
+        },
     }
 
     # Keyword-based tool detection
@@ -633,6 +672,8 @@ async def handle_arpe_quick_start(arguments: dict) -> list[TextContent]:
         "migratorxpress": ["migrate", "migration", "schema translation", "convert schema",
                            "cross-platform", "ddl", "translate schema", "copy constraints",
                            "primary key", "foreign key"],
+        "adbc": ["adbc", "arrow", "driver", "dataframe", "pandas", "polars", "python",
+                 "arpemssql", "arpepgsql", "arpeoracle", "arpenetezza", "arpenz", "arpeteradata"],
     }
 
     def _detect_product(text: str) -> str | None:
@@ -661,7 +702,7 @@ async def handle_arpe_quick_start(arguments: dict) -> list[TextContent]:
             response.append(f"Could not determine the best tool for: \"{use_case}\"")
             response.append("Here are all available tools — pick the one that matches your goal:")
             response.append("")
-        for key in ("fastbcp", "fasttransfer", "lakexpress", "migratorxpress"):
+        for key in ("fastbcp", "fasttransfer", "lakexpress", "migratorxpress", "adbc"):
             wf = workflows[key]
             response.append(f"## {wf['name']} — {wf['purpose']}")
             response.append(f"**Use when**: {wf['when']}")

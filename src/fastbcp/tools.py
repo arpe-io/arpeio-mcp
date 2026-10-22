@@ -182,7 +182,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             "type": {
                                 "type": "string",
                                 "enum": [e.value for e in SourceConnectionType],
-                                "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL). ADBC types 'adbc_mssql' (1.0+), 'adbc_pgsql' (1.1+), 'adbc_oracle' (1.2+), 'adbc_netezza' (1.3+) and 'adbc_teradata' (1.4+) read the same databases through the Arpe ADBC drivers and write parquet output only.",
+                                "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL). ADBC types 'adbc_mssql' (1.0+), 'adbc_pgsql' (1.1+), 'adbc_oracle' (1.2+), 'adbc_netezza' (1.3+) and 'adbc_teradata' (1.4+) read the same databases through the Arpe ADBC drivers (ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza, ArpeTeradata) and write parquet output only.",
                             },
                             "server": {
                                 "type": "string",
@@ -1017,11 +1017,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "- Alternative: `Ntile` with any indexed column"
             ),
             "adbc_pgsql": (
-                "- **ADBC driver**: parquet output only (use `pgsql` for other formats)\n"
+                "- **ArpePGSQL ADBC driver**: parquet output only (use `pgsql` for other formats)\n"
                 "- **Recommended parallelism**: `Physical` (Ctid), as for `pgsql`"
             ),
             "adbc_oracle": (
-                "- **ADBC driver**: parquet output only (use `oraodp` for other formats)\n"
+                "- **ArpeOracle ADBC driver**: parquet output only (use `oraodp` for other formats)\n"
                 "- **Recommended parallelism**: `Physical` (Rowid), as for `oraodp`\n"
                 "- Oracle native network encryption is auto-detected; override with "
                 "`FASTBCP_ADBC_ENCRYPTION` / `FASTBCP_ADBC_DATA_INTEGRITY`\n"
@@ -1029,11 +1029,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "Kerberos forwards the TGT only with `krb5_forward=true`, token/OAuth2 logons need TCPS"
             ),
             "adbc_netezza": (
-                "- **ADBC driver**: parquet output only (use `nzsql` for other formats)\n"
+                "- **ArpeNetezza ADBC driver**: parquet output only (use `nzsql` for other formats)\n"
                 "- **Recommended parallelism**: `Physical` (NZDataSlice), as for `nzsql`"
             ),
             "adbc_mssql": (
-                "- **ADBC driver**: parquet output only (use `mssql` for other formats)\n"
+                "- **ArpeMSSQL ADBC driver**: parquet output only (use `mssql` for other formats)\n"
                 "- **Recommended parallelism**: `RangeId` on a good clustered key, else `Physical` (Physloc), as for `mssql`"
             ),
             "mysql": (
@@ -1047,7 +1047,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "- `Timepartition` on a date column; `DataDriven` on a business column"
             ),
             "adbc_teradata": (
-                "- **ADBC driver** (FastBCP 1.4+): parquet output only (use `teradata` for other formats)\n"
+                "- **ArpeTeradata ADBC driver** (FastBCP 1.4+): parquet output only (use `teradata` for other formats)\n"
                 "- **Recommended parallelism**: as for `teradata` (`DBPartition` on PPI tables, `Ntile`, `RangeId`); "
                 "Physical is not supported\n"
                 "- User/password only: trusted authentication is refused\n"

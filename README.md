@@ -22,6 +22,7 @@ Unified MCP server for [Arpe.io](https://arpe.io) data tools — build, preview,
 | **FastTransfer** | High-performance parallel data transfer between databases |
 | **LakeXpress** | Automated database-to-cloud data pipeline as Parquet |
 | **MigratorXpress** | Cross-platform database migration with parallel transfer |
+| **Arpe ADBC drivers** | ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza, ArpeTeradata: native ADBC drivers returning Apache Arrow (reference info, docs search, release notes) |
 
 > **No binaries required.** All tools work in **command builder mode** out of the box — command building, preview, and informational tools work without any Arpe.io binary installed. To enable execution, download the binaries from [arpe.io](https://arpe.io) and set the corresponding `*_PATH` environment variables.
 
@@ -217,7 +218,7 @@ Then configure your AI assistant to use the `arpeio-mcp` command (stdio transpor
 | `*_LOG_DIR` | Per-tool log directory | No |
 | `LOG_LEVEL` | Logging level (DEBUG/INFO/WARNING/ERROR) | No |
 
-## Available Tools (17)
+## Available Tools (18)
 
 Read-only advisory tools were consolidated into one `*_info` tool per product (with an `action` enum) and per-product release-notes tools were merged into a single `arpe_release_notes`. Auto-parallelism is now suggested inside `preview` so the typical workflow is **2 calls** (`preview` → `execute`) instead of 4.
 
@@ -242,11 +243,14 @@ Read-only advisory tools were consolidated into one `*_info` tool per product (w
 - `migratorxpress_preview_command` — Build the migrate command. Accepts the new `project` tag (v0.6.30+); warns on `migration_db_type="postgres"` against pre-0.6.32 binaries
 - `migratorxpress_execute_command` — Run the migration
 
+### Arpe ADBC drivers (1 tool)
+- `adbc_info` — The driver family with current versions (ArpeMSSQL 0.7.6, ArpePGSQL 0.4.7, ArpeOracle 0.4.2, ArpeNetezza 0.3.7, ArpeTeradata 0.3.5), or one driver's load name, connection URI, authentication, install command, licence setup and FastBCP `adbc_*` connection type. The drivers are libraries, so there is no preview/execute step
+
 ### Meta (4 tools)
 - `arpe_get_status` — Status of all four CLIs (installed / command-builder-only)
 - `arpe_quick_start` — Detect the right tool from a plain-English use case and return a workflow guide
-- `arpe_release_notes` — Return release-notes chunks for any product (`product="fastbcp" | "fasttransfer" | "lakexpress" | "migratorxpress"`, optional `version`)
-- `search_docs` — BM25 full-text search over arpe.io docs sites and blog
+- `arpe_release_notes` — Return release-notes chunks for any product (`product="fastbcp" | "fasttransfer" | "lakexpress" | "migratorxpress"`, or an ADBC driver load name `"arpemssql" | "arpepgsql" | "arpeoracle" | "arpenz" | "arpeteradata"`; optional `version`)
+- `search_docs` — BM25 full-text search over arpe.io docs sites (including [adbc-drivers-docs.arpe.io](https://adbc-drivers-docs.arpe.io/)) and blog
 
 ## Structured output
 
@@ -265,10 +269,10 @@ Each payload carries a `status` field (`ok` / `error`) so success and error resp
 Conversation starters surfaced by clients that support MCP prompts (Claude Desktop, Cursor, etc.):
 `export-table`, `transfer-data`, `lakehouse-pipeline`, `migrate-database`, `troubleshoot`.
 
-## Resources (4)
+## Resources (5)
 
 Static capability matrices served as MCP resources so clients can prefetch them without a tool call:
-`arpeio://capabilities/fastbcp-formats`, `fasttransfer-combinations`, `lakexpress-capabilities`, `migratorxpress-capabilities`.
+`arpeio://capabilities/fastbcp-formats`, `fasttransfer-combinations`, `lakexpress-capabilities`, `migratorxpress-capabilities`, `adbc-drivers`.
 
 ## Evaluations
 

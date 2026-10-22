@@ -8,7 +8,9 @@ supporting clients (Claude, Cursor, etc.) — no tool call needed.
 INSTRUCTIONS = """\
 arpeio-mcp provides four high-performance data tools for database export, \
 transfer, lake pipelines, and cross-platform migration. Each tool wraps a \
-native CLI binary with parallel execution support.
+native CLI binary with parallel execution support. It also documents the \
+Arpe ADBC drivers (ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza, \
+ArpeTeradata), the native drivers behind FastBCP's `adbc_*` connection types.
 
 ## Tool Selection
 
@@ -20,6 +22,7 @@ Choose the right tool based on what the user wants to accomplish:
 | Transfer data from one database to another | **FastTransfer** | Direct DB-to-DB, no intermediate files |
 | Pipeline from DB to a cloud lakehouse as Parquet | **LakeXpress** | Targets: Snowflake, Databricks, Fabric, BigQuery, Redshift, MotherDuck, Glue, DuckLake |
 | Migrate schema + data across database platforms | **MigratorXpress** | Handles DDL translation, PK/FK/AK copy, and parallel data transfer |
+| Read / bulk-load a database as Apache Arrow from code | **Arpe ADBC drivers** | Libraries, not CLIs: call `adbc_info`; no preview/execute step |
 
 Important relationships:
 - LakeXpress uses FastBCP internally for extraction — do NOT suggest both for the same task.
@@ -76,11 +79,31 @@ downstream consumer expects one file.
 thread). Better when the downstream system can import multiple files in \
 parallel (e.g. Spark, Snowflake COPY INTO, bulk loaders).
 
+## Arpe ADBC drivers
+
+Native, licence-gated ADBC drivers (Linux x64, Windows x64) that speak each \
+database's wire protocol directly (no ODBC or vendor client) and stream Apache \
+Arrow both ways. Always use the commercial names below; load them by load name \
+from any ADBC driver manager.
+
+| Driver | Database | Load name | Latest | FastBCP type |
+|--------|----------|-----------|--------|--------------|
+| **ArpeMSSQL** | SQL Server, Azure SQL, Fabric | `arpemssql` | 0.7.6 | `adbc_mssql` |
+| **ArpePGSQL** | PostgreSQL and compatibles | `arpepgsql` | 0.4.7 | `adbc_pgsql` |
+| **ArpeOracle** | Oracle, Oracle Cloud ADB | `arpeoracle` | 0.4.2 | `adbc_oracle` |
+| **ArpeNetezza** | IBM Netezza / Cloud NPS | `arpenz` | 0.3.7 | `adbc_netezza` |
+| **ArpeTeradata** | Teradata | `arpeteradata` | 0.3.5 | `adbc_teradata` |
+
+ArpeDb2 (IBM Db2) is announced but not published. Call `adbc_info` for \
+URIs, install commands and licence setup, and `arpe_release_notes` with the \
+load name for a driver's release history. Docs: https://adbc-drivers-docs.arpe.io/
+
 ## FastBCP ADBC connection types
 
 FastBCP 1.x adds ADBC connection types that read through the Arpe ADBC \
-drivers: `adbc_mssql` (1.0+), `adbc_pgsql` (1.1+), `adbc_oracle` (1.2+) and \
-`adbc_netezza` (1.3+) and `adbc_teradata` (1.4+). They only write **Parquet** \
+drivers: `adbc_mssql` (ArpeMSSQL, 1.0+), `adbc_pgsql` (ArpePGSQL, 1.1+), \
+`adbc_oracle` (ArpeOracle, 1.2+), `adbc_netezza` (ArpeNetezza, 1.3+) and \
+`adbc_teradata` (ArpeTeradata, 1.4+). They only write **Parquet** \
 output; use the native type (`mssql`, `pgsql`, `oraodp`, `nzsql`, `teradata`) \
 for CSV, JSON and the other formats. Parallelism methods follow the native type \
 (Physical on SQL Server, PostgreSQL, Oracle and Netezza; no Physical on Teradata). \

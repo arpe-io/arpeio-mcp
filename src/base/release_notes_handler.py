@@ -9,15 +9,19 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from mcp.types import Tool, ToolAnnotations, TextContent
 
 from .structured import respond
+from ..adbc.drivers import ADBC_DRIVERS
 from ..doc_search.index import SearchEngine
 
-ProductKey = str  # "fastbcp" | "fasttransfer" | "lakexpress" | "migratorxpress"
+# "fastbcp" | "fasttransfer" | "lakexpress" | "migratorxpress", or an ADBC
+# driver load name ("arpemssql", "arpeteradata", ...)
+ProductKey = str
 
 _PRODUCT_DISPLAY_NAMES: Dict[ProductKey, str] = {
     "fastbcp": "FastBCP",
     "fasttransfer": "FastTransfer",
     "lakexpress": "LakeXpress",
     "migratorxpress": "MigratorXpress",
+    **{key: drv.name for key, drv in ADBC_DRIVERS.items()},
 }
 
 

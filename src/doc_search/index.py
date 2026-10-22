@@ -12,6 +12,8 @@ from typing import Dict, List, Optional, Tuple
 import httpx
 from rank_bm25 import BM25Okapi
 
+from src.adbc.drivers import ADBC_DRIVERS
+
 from .cache import (
     CACHE_DIR,
     best_version_for,
@@ -133,13 +135,17 @@ class SearchEngine:
         crawl order (typically heading order on the page), not by BM25 score.
 
         Args:
-            product: One of "fastbcp", "fasttransfer", "lakexpress", "migratorxpress".
+            product: One of "fastbcp", "fasttransfer", "lakexpress", "migratorxpress",
+                or an ADBC driver load name ("arpemssql", "arpeteradata", ...).
             version: Optional version string like "0.31" or "0.4". If None, the
                 most recent version available in the index is used.
 
         Returns:
             List of chunk dicts (may be empty if nothing is indexed yet).
         """
+        if product in ADBC_DRIVERS:
+            return self._get_adbc_whats_new(product, version)
+
         if product not in self._indexes:
             return []
 
@@ -168,6 +174,23 @@ class SearchEngine:
             return release_chunks
         max_version = max(v for v, _ in versioned)
         return [c for v, c in versioned if v == max_version]
+
+    def _get_adbc_whats_new(self, load_name: str, version: Optional[str]) -> List[dict]:
+        """Return a driver's "What's new" chunks from the shared ADBC docs index.
+
+        The page has one h2 section per release, headed "<topic> — <month> (vX.Y.Z)".
+        Without `version` the whole page is returned (it is the release history,
+        newest first); with it, the sections whose tag starts with that version.
+        """
+        if "adbc" not in self._indexes:
+            return []
+        chunks, _ = self._indexes["adbc"]
+        marker = f"/drivers/{ADBC_DRIVERS[load_name].docs_slug}/whats-new"
+        page = [c for c in chunks if marker in c.get("url", "").lower()]
+        if not version:
+            return page
+        tag = re.compile(r"\(v" + re.escape(version.lstrip("vV")) + r"(?:[.)])")
+        return [c for c in page if tag.search(c.get("source", ""))]
 
     async def initialize(self, version_info: Optional[Dict] = None) -> None:
         """Initialize all indexes from cache or by crawling.

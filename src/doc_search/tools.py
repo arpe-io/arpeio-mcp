@@ -50,7 +50,8 @@ def create_tools(search_engine: SearchEngine) -> Tuple[List[Tool], Callable]:
                 "use cases, parallelism strategies, integrations, and best practices. "
                 "Call this when unsure about a parameter value, need an example command, "
                 "or want the recommended approach for a specific source/target/format combination. "
-                "Searches across all product documentation (FastBCP, FastTransfer, LakeXpress, MigratorXpress) "
+                "Searches across all product documentation (FastBCP, FastTransfer, LakeXpress, MigratorXpress, "
+                "and the Arpe ADBC drivers ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza, ArpeTeradata) "
                 "and the arpe.io blog simultaneously. Does not execute anything."
             ),
             annotations=ToolAnnotations(

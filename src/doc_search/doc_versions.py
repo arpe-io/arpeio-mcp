@@ -33,6 +33,9 @@ DOC_URLS = {
     "fasttransfer": "https://fasttransfer-docs.arpe.io/{version}/sitemap",
     "lakexpress": "https://lakexpress-docs.arpe.io/{version}/sitemap",
     "migratorxpress": "https://aetperf.github.io/MigratorXpress-Documentation/",
+    # Arpe ADBC drivers: one site for the whole family, documenting the current
+    # release of each driver (no versioned URLs), cached as "adbc_latest".
+    "adbc": "https://adbc-drivers-docs.arpe.io/sitemap.xml",
 }
 
 # Doc versions served under a different URL path. The current FastBCP release

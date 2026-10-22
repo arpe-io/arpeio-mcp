@@ -29,11 +29,11 @@ class SourceConnectionType(str, Enum):
     TERADATA = "teradata"
     # ADBC connection types (FastBCP 1.0+): same sources as their native
     # counterparts, extracted through the Arpe ADBC drivers. Parquet output only.
-    ADBC_MSSQL = "adbc_mssql"  # 1.0+
-    ADBC_PGSQL = "adbc_pgsql"  # 1.1+
-    ADBC_ORACLE = "adbc_oracle"  # 1.2+
-    ADBC_NETEZZA = "adbc_netezza"  # 1.3+
-    ADBC_TERADATA = "adbc_teradata"  # 1.4+
+    ADBC_MSSQL = "adbc_mssql"  # 1.0+, ArpeMSSQL
+    ADBC_PGSQL = "adbc_pgsql"  # 1.1+, ArpePGSQL
+    ADBC_ORACLE = "adbc_oracle"  # 1.2+, ArpeOracle
+    ADBC_NETEZZA = "adbc_netezza"  # 1.3+, ArpeNetezza
+    ADBC_TERADATA = "adbc_teradata"  # 1.4+, ArpeTeradata
 
 
 # Each ADBC connection type maps to the native type FastBCP rewrites it to

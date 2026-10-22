@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.8] - 2026-10-22
+
+### Added
+
+- **Arpe ADBC drivers**, under their commercial names and latest published versions: ArpeMSSQL 0.7.6 (SQL Server, Azure SQL, Fabric), ArpePGSQL 0.4.7 (PostgreSQL), ArpeOracle 0.4.2 (Oracle, Oracle Cloud ADB), ArpeNetezza 0.3.7 (IBM Netezza, load name `arpenz`) and the new ArpeTeradata 0.3.5 (Teradata). ArpeDb2 is listed as announced.
+  - New `adbc_info` tool: lists the family, or returns one driver's load name, option prefix, connection URI, authentication methods, one-line installers, licence lookup order, FastBCP `adbc_*` connection type and docs links. Accepts the commercial name, the load name or the FastBCP type.
+  - New `arpeio://capabilities/adbc-drivers` resource with the same data.
+  - [adbc-drivers-docs.arpe.io](https://adbc-drivers-docs.arpe.io/) added to `search_docs` (crawled from its XML sitemap).
+  - `arpe_release_notes` accepts a driver load name (`arpemssql`, `arpepgsql`, `arpeoracle`, `arpenz`, `arpeteradata`) and returns that driver's "What's new" history, or the releases matching `version` (`0.3.5`, or a prefix such as `0.3`).
+  - `arpe_quick_start` recognises ADBC / Arrow / dataframe use cases and recommends the drivers (or FastBCP's `adbc_*` types for file exports).
+  - Server instructions gain an "Arpe ADBC drivers" section, and the FastBCP ADBC section names the driver behind each connection type.
+
+### Changed
+
+- FastBCP workflow tips and the `source_type` description name the driver behind each `adbc_*` type (ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza, ArpeTeradata).
+- Doc search strips the zero-width anchor character Docusaurus appends to headings.
+
 ## [0.3.7] - 2026-10-22
 
 ### Added

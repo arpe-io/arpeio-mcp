@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.arpe-io/arpeio-mcp",
-  "description": "Arpe.io MCP server for FastBCP, FastTransfer, LakeXpress, MigratorXpress",
+  "description": "Arpe.io MCP server for FastBCP, FastTransfer, LakeXpress, MigratorXpress and the Arpe ADBC drivers",
   "repository": {
     "url": "https://github.com/arpe-io/arpeio-mcp",
     "source": "github"
   },
-  "version": "0.3.7",
+  "version": "0.3.8",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "arpeio-mcp",
-      "version": "0.3.7",
+      "version": "0.3.8",
       "transport": { "type": "stdio" },
       "environmentVariables": [
         { "name": "FASTBCP_PATH", "description": "Path to FastBCP binary (optional — preview-only mode without it)", "isRequired": false, "format": "string", "isSecret": false },

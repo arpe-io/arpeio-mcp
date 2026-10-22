@@ -7,11 +7,12 @@ strips HTML to plain text, and splits content into searchable chunks.
 
 import logging
 import re
+import warnings
 from typing import List, Optional
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,8 @@ def chunk_html(html: str, url: str, source_name: str) -> List[dict]:
     for element in content.descendants:
         if element.name in ("h2", "h3"):
             _flush()
-            current_heading = element.get_text(strip=True)
+            # Docusaurus heading anchors end with a zero-width space
+            current_heading = element.get_text(strip=True).replace("\u200b", "")
             current_text_parts = []
         elif element.name in ("p", "li", "td", "th", "pre", "code", "blockquote", "dt", "dd"):
             text = element.get_text(separator=" ", strip=True)
@@ -135,8 +137,10 @@ async def crawl_sitemap_page(sitemap_url: str, client: httpx.AsyncClient) -> Lis
         text = resp.text
 
         if "xml" in content_type or text.strip().startswith("<?xml"):
-            # XML sitemap
-            soup = BeautifulSoup(text, "html.parser")
+            # XML sitemap (<loc> lookup works with the HTML parser too)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
+                soup = BeautifulSoup(text, "html.parser")
             for loc in soup.find_all("loc"):
                 url = loc.get_text(strip=True)
                 if url:
