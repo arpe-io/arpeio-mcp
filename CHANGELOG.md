@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.7] - 2026-10-22
+
+### Added
+
+- **FastBCP 1.4 support** (registry entry `1.4.0.0`):
+  - New `adbc_teradata` connection type (1.4+), read through the embedded ArpeTeradata ADBC driver. Like the other ADBC types it writes Parquet only; parallelism follows the native `teradata` type (`DBPartition` on PPI tables, `Ntile`, `RangeId`…). Workflow tips cover the TLS / TTU logon and the refused trusted authentication.
+  - New `Physical` parallel method (1.4+): splits on the physical row location, resolved by FastBCP to `Ctid` (PostgreSQL), `Rowid` (Oracle), `Physloc` (SQL Server) or `NZDataSlice` (Netezza), native and ADBC. It needs `schema` and `table` (no query) and no key column. Other sources (`odbc`, `oledb`, `mysql`, `clickhouse`, `hana`, `teradata`, `adbc_teradata`) are rejected, as FastBCP does.
+  - Version-compatibility warnings when `adbc_teradata` or `Physical` is used against a pre-1.4 binary, and a deprecation warning when `Ctid`, `Rowid`, `Physloc` or `NZDataSlice` is used against 1.4+ (removed in FastBCP 2.0).
+  - FastBCP 1.4 docs added to doc search; 1.4 is now the version served at `/latest/` (1.3 moved to `/1.3/`).
+
+### Changed
+
+- Parallelism suggestions recommend `Physical` instead of `Ctid` / `Rowid` / `Physloc` / `NZDataSlice` when the detected binary is 1.4+ (or undetected), and keep the engine-specific names for older binaries. `odbc` / `oledb` sources no longer get `Physloc` (FastBCP cannot tell the engine behind them). A numeric non-identity key on a medium table now gets `Ntile` instead of `Random`, which the FastBCP parallel-method guide advises against in production.
+- The preview tool only auto-suggests a physical-location method when both `schema` and `table` are given.
+- `Rowid` and `Physloc` require `schema` and `table`, matching FastBCP 1.4.
+- Evaluation questions 1-4 updated for `Physical` (answer key: `Physical`, then the strategies it resolves to on Oracle, SQL Server and Netezza).
+
 ## [0.3.6] - 2026-10-13
 
 ### Added

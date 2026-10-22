@@ -25,9 +25,9 @@ from src.fastbcp.validators import (
 class TestSourceConnectionType:
     """Tests for SourceConnectionType enum."""
 
-    def test_all_18_source_types(self):
-        """Test that there are exactly 18 source types (14 native + 4 ADBC)."""
-        assert len(SourceConnectionType) == 18
+    def test_all_19_source_types(self):
+        """Test that there are exactly 19 source types (14 native + 5 ADBC)."""
+        assert len(SourceConnectionType) == 19
 
     def test_adbc_types_exist(self):
         """Test that the FastBCP 1.x ADBC source types exist."""
@@ -35,6 +35,7 @@ class TestSourceConnectionType:
         assert SourceConnectionType("adbc_pgsql") == SourceConnectionType.ADBC_PGSQL
         assert SourceConnectionType("adbc_oracle") == SourceConnectionType.ADBC_ORACLE
         assert SourceConnectionType("adbc_netezza") == SourceConnectionType.ADBC_NETEZZA
+        assert SourceConnectionType("adbc_teradata") == SourceConnectionType.ADBC_TERADATA
 
     def test_oraodp_exists(self):
         """Test that oraodp source type exists."""
@@ -90,8 +91,9 @@ class TestOtherEnums:
     """Tests for other enum types."""
 
     def test_all_parallelism_methods(self):
-        """Test all 11 parallelism method values exist."""
-        assert len(ParallelismMethod) == 11
+        """Test all 12 parallelism method values exist."""
+        assert len(ParallelismMethod) == 12
+        assert ParallelismMethod("Physical") == ParallelismMethod.PHYSICAL
         assert ParallelismMethod("DBPartition") == ParallelismMethod.DB_PARTITION
         assert ParallelismMethod("Ctid") == ParallelismMethod.CTID
         assert ParallelismMethod("None") == ParallelismMethod.NONE
@@ -591,6 +593,7 @@ class TestExportRequest:
                 "type": "oraodp",
                 "server": "localhost:1521",
                 "database": "ORCL",
+                "schema": "app",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -651,6 +654,7 @@ class TestExportRequest:
                 "type": "mssql",
                 "server": "localhost",
                 "database": "sourcedb",
+                "schema": "app",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -670,6 +674,7 @@ class TestExportRequest:
                 "type": "msoledbsql",
                 "server": "localhost",
                 "database": "sourcedb",
+                "schema": "app",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -758,6 +763,7 @@ class TestAdbcExportRequest:
             source={
                 "type": source_type,
                 "database": "db",
+                "schema": "s",
                 "table": "t",
                 "user": "u",
                 "password": "p",
@@ -844,3 +850,91 @@ class TestDBPartitionMethod:
     def test_query_rejected(self):
         with pytest.raises(ValidationError):
             self._request("mssql", table=None, query="SELECT 1")
+
+
+class TestPhysicalMethod:
+    """Physical (FastBCP 1.4+) splits on the physical row location."""
+
+    @staticmethod
+    def _request(source_type, schema="dbo", table="orders", query=None,
+                 fmt="parquet", method="Physical"):
+        source = {
+            "type": source_type,
+            "database": "db",
+            "user": "u",
+            "password": "p",
+        }
+        if schema:
+            source["schema"] = schema
+        if table:
+            source["table"] = table
+        if query:
+            source["query"] = query
+        return ExportRequest(
+            source=source,
+            output={"format": fmt, "directory": "/tmp/out"},
+            options={"method": method, "degree": 8},
+        )
+
+    @pytest.mark.parametrize(
+        "source_type",
+        ["pgsql", "pgcopy", "adbc_pgsql", "oraodp", "adbc_oracle", "mssql",
+         "msoledbsql", "adbc_mssql", "nzsql", "nzcopy", "nzoledb", "adbc_netezza"],
+    )
+    def test_supported_sources(self, source_type):
+        request = self._request(source_type)
+        assert request.options.method == ParallelismMethod.PHYSICAL
+        assert request.options.distribute_key_column is None
+
+    @pytest.mark.parametrize(
+        "source_type",
+        ["odbc", "oledb", "mysql", "clickhouse", "hana", "teradata", "adbc_teradata"],
+    )
+    def test_unsupported_sources_rejected(self, source_type):
+        with pytest.raises(ValidationError, match="Physical"):
+            self._request(source_type)
+
+    def test_odbc_error_suggests_native_type(self):
+        with pytest.raises(ValidationError, match="native connection type"):
+            self._request("odbc")
+
+    def test_schema_required(self):
+        with pytest.raises(ValidationError, match="schema"):
+            self._request("pgsql", schema=None)
+
+    def test_query_rejected(self):
+        with pytest.raises(ValidationError):
+            self._request("pgsql", table=None, query="SELECT 1")
+
+    @pytest.mark.parametrize("source_type,method", [("oraodp", "Rowid"), ("mssql", "Physloc")])
+    def test_rowid_physloc_require_schema_and_table(self, source_type, method):
+        """Since 1.4, Rowid and Physloc also need schema + table."""
+        with pytest.raises(ValidationError, match="schema"):
+            self._request(source_type, schema=None, method=method)
+
+
+class TestAdbcTeradata:
+    """adbc_teradata (FastBCP 1.4+) reads Teradata through ArpeTeradata."""
+
+    @staticmethod
+    def _request(fmt="parquet", method="None", key=None):
+        options = {"method": method}
+        if key:
+            options["distribute_key_column"] = key
+        return ExportRequest(
+            source={"type": "adbc_teradata", "server": "td-host", "database": "TPCH",
+                    "schema": "TPCH", "table": "ORDERS", "user": "u", "password": "p"},
+            output={"format": fmt, "directory": "/tmp/out"},
+            options=options,
+        )
+
+    def test_parquet_ok(self):
+        assert self._request().source.type == "adbc_teradata"
+
+    def test_csv_rejected(self):
+        with pytest.raises(ValidationError, match="teradata"):
+            self._request(fmt="csv")
+
+    @pytest.mark.parametrize("method,key", [("Ntile", "o_orderkey"), ("DBPartition", None)])
+    def test_teradata_methods_allowed(self, method, key):
+        assert self._request(method=method, key=key).options.method.value == method

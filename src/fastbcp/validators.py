@@ -33,6 +33,7 @@ class SourceConnectionType(str, Enum):
     ADBC_PGSQL = "adbc_pgsql"  # 1.1+
     ADBC_ORACLE = "adbc_oracle"  # 1.2+
     ADBC_NETEZZA = "adbc_netezza"  # 1.3+
+    ADBC_TERADATA = "adbc_teradata"  # 1.4+
 
 
 # Each ADBC connection type maps to the native type FastBCP rewrites it to
@@ -42,6 +43,20 @@ ADBC_NATIVE_TYPES = {
     "adbc_pgsql": "pgsql",
     "adbc_oracle": "oraodp",
     "adbc_netezza": "nzsql",
+    "adbc_teradata": "teradata",
+}
+
+# Native connection types per Physical strategy (FastBCP 1.4+). Physical is
+# resolved from the connection type; other sources are rejected by FastBCP.
+PHYSICAL_STRATEGIES = {
+    "pgsql": "Ctid",
+    "pgcopy": "Ctid",
+    "oraodp": "Rowid",
+    "mssql": "Physloc",
+    "msoledbsql": "Physloc",
+    "nzsql": "NZDataSlice",
+    "nzcopy": "NZDataSlice",
+    "nzoledb": "NZDataSlice",
 }
 
 
@@ -66,17 +81,18 @@ class OutputFormat(str, Enum):
 class ParallelismMethod(str, Enum):
     """Parallelism methods for data distribution."""
 
-    CTID = "Ctid"  # PostgreSQL-specific
+    CTID = "Ctid"  # PostgreSQL-specific (deprecated in 1.4, use Physical)
     DATA_DRIVEN = "DataDriven"  # Distribute by distinct key values
     NTILE = "Ntile"  # Even distribution
-    NZ_DATA_SLICE = "NZDataSlice"  # Netezza-specific
+    NZ_DATA_SLICE = "NZDataSlice"  # Netezza-specific (deprecated in 1.4)
     NONE = "None"  # No parallelism
-    PHYSLOC = "Physloc"  # Physical location
+    PHYSLOC = "Physloc"  # SQL Server physical location (deprecated in 1.4)
     RANDOM = "Random"  # Random distribution using modulo
     RANGE_ID = "RangeId"  # Numeric range distribution
-    ROWID = "Rowid"  # Oracle-specific
+    ROWID = "Rowid"  # Oracle-specific (deprecated in 1.4)
     TIMEPARTITION = "Timepartition"  # Time-based partitioning for temporal data
     DB_PARTITION = "DBPartition"  # Native table partitions (FastBCP 1.3+)
+    PHYSICAL = "Physical"  # Physical row location, resolved per engine (1.4+)
 
 
 class StorageTarget(str, Enum):
@@ -430,6 +446,33 @@ class ExportRequest(BaseModel):
         ]:
             raise ValueError(
                 f"Method 'Physloc' only works with SQL Server sources (mssql, oledb, odbc, msoledbsql), not '{source_type}'"
+            )
+
+        # Physical resolves to Ctid / Rowid / Physloc / NZDataSlice from the
+        # connection type (FastBCP 1.4+)
+        if method == ParallelismMethod.PHYSICAL:
+            if source_type not in PHYSICAL_STRATEGIES:
+                hint = (
+                    " FastBCP cannot identify the engine behind odbc/oledb: use a "
+                    "native connection type."
+                    if source_type in ("odbc", "oledb")
+                    else ""
+                )
+                raise ValueError(
+                    f"Method 'Physical' only works with PostgreSQL, Oracle, SQL Server "
+                    f"and Netezza sources, not '{self.source.type}'.{hint}"
+                )
+
+        # Since FastBCP 1.4, Physical, Physloc and Rowid need schema + table
+        if method in (
+            ParallelismMethod.PHYSICAL,
+            ParallelismMethod.PHYSLOC,
+            ParallelismMethod.ROWID,
+        ) and (not self.source.schema or not self.source.table):
+            raise ValueError(
+                f"Method '{method.value}' requires both 'schema' and 'table' "
+                f"(FastBCP splits the table on its physical row location; "
+                f"'query' is not allowed)"
             )
 
         return self

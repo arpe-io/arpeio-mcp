@@ -225,7 +225,7 @@ class TestVersionDetector:
         caps = detector.capabilities
 
         # Should get the latest known capabilities
-        assert caps == VERSION_REGISTRY["1.3.0.0"]
+        assert caps == VERSION_REGISTRY["1.4.0.0"]
 
     @patch("src.base.version_detector.subprocess.run")
     def test_capabilities_patch_version_resolves_to_minor(self, mock_run):
@@ -260,7 +260,7 @@ class TestVersionDetector:
         caps = detector.capabilities
 
         # Should fall back to latest known
-        assert caps == VERSION_REGISTRY["1.3.0.0"]
+        assert caps == VERSION_REGISTRY["1.4.0.0"]
 
     def test_registry_0291_source_completeness(self):
         """Test that 0.29.1.0 registry has all expected source types."""
@@ -370,6 +370,7 @@ class TestAdbcVersionGating:
             ("1.1.0.0", {"adbc_mssql", "adbc_pgsql"}),
             ("1.2.0.0", {"adbc_mssql", "adbc_pgsql", "adbc_oracle"}),
             ("1.3.0.0", {"adbc_mssql", "adbc_pgsql", "adbc_oracle", "adbc_netezza"}),
+            ("1.4.0.0", {"adbc_mssql", "adbc_pgsql", "adbc_oracle", "adbc_netezza", "adbc_teradata"}),
         ],
     )
     def test_registry_adbc_types(self, version, expected):
@@ -429,6 +430,52 @@ class TestAdbcVersionGating:
         assert "DBPartition" not in VERSION_REGISTRY["1.2.0.0"].parallelism_methods
         assert "DBPartition" in VERSION_REGISTRY["1.3.0.0"].parallelism_methods
 
-    def test_latest_registry_entry_is_1_3(self):
+    def test_adbc_teradata_on_1_3_warns(self):
+        caps = VERSION_REGISTRY["1.3.0.0"]
+        warnings = check_version_compatibility(
+            {"source": {"type": "adbc_teradata"}}, caps, ToolVersion(parts=(1, 3, 2, 0))
+        )
+        assert warnings and "1.4.0.0+" in warnings[0]
+
+    def test_physical_on_1_3_warns(self):
+        caps = VERSION_REGISTRY["1.3.0.0"]
+        warnings = check_version_compatibility(
+            {"source": {"type": "pgsql"}, "options": {"method": "Physical"}},
+            caps,
+            ToolVersion(parts=(1, 3, 2, 0)),
+        )
+        assert len(warnings) == 1
+        assert "Physical" in warnings[0] and "1.4.0.0+" in warnings[0]
+
+    def test_physical_on_1_4_no_warning(self):
+        caps = VERSION_REGISTRY["1.4.0.0"]
+        warnings = check_version_compatibility(
+            {"source": {"type": "adbc_mssql"}, "options": {"method": "Physical"}},
+            caps,
+            ToolVersion(parts=(1, 4, 0, 0)),
+        )
+        assert warnings == []
+
+    @pytest.mark.parametrize("method", ["Ctid", "Rowid", "Physloc", "NZDataSlice"])
+    def test_engine_methods_deprecated_on_1_4(self, method):
+        caps = VERSION_REGISTRY["1.4.0.0"]
+        warnings = check_version_compatibility(
+            {"source": {"type": "pgsql"}, "options": {"method": method}},
+            caps,
+            ToolVersion(parts=(1, 4, 0, 0)),
+        )
+        assert len(warnings) == 1
+        assert "deprecated" in warnings[0] and "Physical" in warnings[0]
+
+    def test_engine_methods_not_deprecated_on_1_3(self):
+        caps = VERSION_REGISTRY["1.3.0.0"]
+        warnings = check_version_compatibility(
+            {"source": {"type": "pgsql"}, "options": {"method": "Ctid"}},
+            caps,
+            ToolVersion(parts=(1, 3, 2, 0)),
+        )
+        assert warnings == []
+
+    def test_latest_registry_entry_is_1_4(self):
         latest = max(VERSION_REGISTRY, key=lambda v: tuple(int(x) for x in v.split(".")))
-        assert latest == "1.3.0.0"
+        assert latest == "1.4.0.0"

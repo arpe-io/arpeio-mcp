@@ -44,6 +44,7 @@ source database and available key columns:
 | **NZDataSlice** | Netezza only; uses native data slicing | No |
 | **Timepartition** | FastBCP 0.30+; partitions by time column | Yes (datetime) |
 | **DBPartition** | FastBCP 1.3+; one chunk per native table partition (SQL Server, PostgreSQL, Oracle, MySQL, Teradata); needs schema + table | No |
+| **Physical** | FastBCP 1.4+; physical row location, resolved to PhysLoc / Ctid / Rowid / NZDataSlice from the connection type (SQL Server, PostgreSQL, Oracle, Netezza only); needs schema + table | No |
 
 Default recommendations:
 - Numeric primary key exists → **Ntile**
@@ -51,6 +52,9 @@ Default recommendations:
 - SQL Server, no key → **PhysLoc**
 - PostgreSQL, no key → **Ctid**
 - Oracle, no key → **Rowid**
+- FastBCP 1.4+: use **Physical** instead of PhysLoc / Ctid / Rowid / \
+NZDataSlice, which are deprecated in FastBCP (removed in 2.0). FastBCP < 1.4 \
+and FastTransfer keep the engine-specific names.
 - When unsure, call `{product}_info` with action='parallelism' for FastBCP/FastTransfer.
 
 ## --paralleldegree Convention
@@ -76,9 +80,11 @@ parallel (e.g. Spark, Snowflake COPY INTO, bulk loaders).
 
 FastBCP 1.x adds ADBC connection types that read through the Arpe ADBC \
 drivers: `adbc_mssql` (1.0+), `adbc_pgsql` (1.1+), `adbc_oracle` (1.2+) and \
-`adbc_netezza` (1.3+). They only write **Parquet** output; use the native type \
-(`mssql`, `pgsql`, `oraodp`, `nzsql`) for CSV, JSON and the other formats. \
-Parallelism methods follow the native type (Physloc, Ctid, Rowid, NZDataSlice).
+`adbc_netezza` (1.3+) and `adbc_teradata` (1.4+). They only write **Parquet** \
+output; use the native type (`mssql`, `pgsql`, `oraodp`, `nzsql`, `teradata`) \
+for CSV, JSON and the other formats. Parallelism methods follow the native type \
+(Physical on SQL Server, PostgreSQL, Oracle and Netezza; no Physical on Teradata). \
+`adbc_teradata` refuses trusted authentication.
 
 ## LakeXpress 0.4.0+ notes
 

@@ -335,7 +335,7 @@ def get_supported_formats() -> Dict[str, Any]:
                 "xlsx",
                 "binary",
             ],
-            "ADBC (adbc_mssql 1.0+, adbc_pgsql 1.1+, adbc_oracle 1.2+, adbc_netezza 1.3+)": [
+            "ADBC (adbc_mssql 1.0+, adbc_pgsql 1.1+, adbc_oracle 1.2+, adbc_netezza 1.3+, adbc_teradata 1.4+)": [
                 "parquet",
             ],
         },
@@ -357,6 +357,7 @@ def suggest_parallelism_method(
     has_numeric_key: bool,
     has_identity_column: bool,
     table_size_estimate: str,
+    physical_supported: bool = True,
 ) -> Dict[str, str]:
     """
     Suggest optimal parallelism method based on source database and table characteristics.
@@ -366,6 +367,9 @@ def suggest_parallelism_method(
         has_numeric_key: Whether table has a numeric key column
         has_identity_column: Whether table has an identity/auto-increment column
         table_size_estimate: Table size ('small', 'medium', 'large')
+        physical_supported: Whether the FastBCP binary accepts the Physical
+            method (1.4+). When False, the deprecated engine-specific name
+            (Ctid, Rowid, Physloc, NZDataSlice) is returned instead.
 
     Returns:
         Dictionary with 'method' and 'explanation' keys
@@ -380,33 +384,50 @@ def suggest_parallelism_method(
             "explanation": "Table is small - parallelism overhead would likely reduce performance. Use None for best results.",
         }
 
-    # PostgreSQL - Ctid is optimal
+    def physical(engine_method: str, explanation: str) -> Dict[str, str]:
+        if physical_supported:
+            return {
+                "method": "Physical",
+                "explanation": (
+                    f"{explanation} Physical (FastBCP 1.4+) resolves to {engine_method} "
+                    f"for this connection type; it needs schema and table, no key column."
+                ),
+            }
+        return {
+            "method": engine_method,
+            "explanation": (
+                f"{explanation} This FastBCP version predates Physical, so use "
+                f"{engine_method} directly."
+            ),
+        }
+
+    # PostgreSQL - physical tuple id (Ctid)
     if source_lower in ["pgsql", "pgcopy", "postgresql"]:
-        return {
-            "method": "Ctid",
-            "explanation": "PostgreSQL source detected. Ctid method provides efficient parallel reading using PostgreSQL's native tuple identifier.",
-        }
+        return physical(
+            "Ctid",
+            "PostgreSQL source detected. Splitting on the native tuple identifier (CTID) reads the table in parallel without a key column.",
+        )
 
-    # Oracle - Rowid is optimal
+    # Oracle - ROWID
     if source_lower in ["oraodp"]:
-        return {
-            "method": "Rowid",
-            "explanation": "Oracle source detected. Rowid method provides efficient parallel reading using Oracle's native row identifier.",
-        }
+        return physical(
+            "Rowid",
+            "Oracle source detected. Splitting on the native ROWID reads the table in parallel without a key column.",
+        )
 
-    # Netezza - NZDataSlice is optimal
+    # Netezza - data slices
     if source_lower in ["nzcopy", "nzoledb", "nzsql", "netezza"]:
-        return {
-            "method": "NZDataSlice",
-            "explanation": "Netezza source detected. NZDataSlice method leverages Netezza's data slicing for optimal parallel performance.",
-        }
+        return physical(
+            "NZDataSlice",
+            "Netezza source detected. Splitting on the Netezza data slices gives one chunk per slice, through a shared work queue.",
+        )
 
-    # SQL Server without numeric key - Physloc is a good option
-    if source_lower in ["mssql", "oledb", "odbc", "msoledbsql"] and not has_numeric_key:
-        return {
-            "method": "Physloc",
-            "explanation": "SQL Server source detected without numeric key. Physloc method uses physical row location for parallel reading without requiring a key column.",
-        }
+    # SQL Server without numeric key - physical row location (Physloc)
+    if source_lower in ["mssql", "msoledbsql"] and not has_numeric_key:
+        return physical(
+            "Physloc",
+            "SQL Server source detected without numeric key. Splitting on the physical row location needs no key column.",
+        )
 
     # If has numeric key - RangeId or Random are good choices
     if has_numeric_key:
@@ -417,8 +438,8 @@ def suggest_parallelism_method(
             }
         else:
             return {
-                "method": "Random",
-                "explanation": "Random method recommended. Uses modulo operation on numeric key for distribution. Works well when key values are evenly distributed.",
+                "method": "Ntile",
+                "explanation": "Ntile recommended for a numeric key: it builds chunks with equal row counts even when key values have gaps. An index on the key keeps it cheap.",
             }
 
     # No specific optimization available - use DataDriven or Ntile

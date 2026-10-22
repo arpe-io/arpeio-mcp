@@ -13,6 +13,7 @@ from pathlib import Path
 from defusedxml import ElementTree as ET
 
 from src.fastbcp.command_builder import suggest_parallelism_method, get_supported_formats
+from src.fastbcp.validators import PHYSICAL_STRATEGIES, native_source_type
 from src.lakexpress.version import VERSION_REGISTRY as LX_REGISTRY
 from src.migratorxpress.version import VERSION_REGISTRY as MX_REGISTRY
 
@@ -33,7 +34,7 @@ def test_eval_file_has_ten_questions():
 def test_eval_answers_match_xml_order():
     """The XML answer key, in order, must equal the expected ground truth."""
     expected = [
-        "Ctid", "Rowid", "Physloc", "NZDataSlice",
+        "Physical", "Rowid", "Physloc", "NZDataSlice",
         "0.6.30", "0.6.32", "0.4.0", "Redshift", "Teradata",
         "MigratorXpress",
     ]
@@ -43,10 +44,16 @@ def test_eval_answers_match_xml_order():
 # --- Re-derive each fact from the source of truth -------------------------- #
 
 def test_parallelism_recommendations_no_key():
-    assert suggest_parallelism_method("pgsql", False, False, "large")["method"] == "Ctid"
-    assert suggest_parallelism_method("oraodp", False, False, "large")["method"] == "Rowid"
-    assert suggest_parallelism_method("mssql", False, False, "large")["method"] == "Physloc"
-    assert suggest_parallelism_method("netezza", False, False, "large")["method"] == "NZDataSlice"
+    assert suggest_parallelism_method("pgsql", False, False, "large")["method"] == "Physical"
+
+
+def test_physical_resolved_strategies():
+    for source_type in ("oraodp", "adbc_oracle"):
+        assert PHYSICAL_STRATEGIES[native_source_type(source_type)] == "Rowid"
+    for source_type in ("mssql", "msoledbsql", "adbc_mssql"):
+        assert PHYSICAL_STRATEGIES[native_source_type(source_type)] == "Physloc"
+    for source_type in ("nzsql", "nzcopy", "nzoledb", "adbc_netezza"):
+        assert PHYSICAL_STRATEGIES[native_source_type(source_type)] == "NZDataSlice"
 
 
 def test_migratorxpress_project_min_version():

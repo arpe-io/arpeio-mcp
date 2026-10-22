@@ -30,7 +30,11 @@ ADBC_MIN_VERSIONS: Dict[str, str] = {
     "adbc_pgsql": "1.1.0.0",
     "adbc_oracle": "1.2.0.0",
     "adbc_netezza": "1.3.0.0",
+    "adbc_teradata": "1.4.0.0",
 }
+
+# Engine-specific methods replaced by Physical in FastBCP 1.4 (removed in 2.0)
+DEPRECATED_PHYSICAL_METHODS = frozenset(["Ctid", "Rowid", "Physloc", "NZDataSlice"])
 
 
 # Static version registry: version string -> capabilities
@@ -531,6 +535,74 @@ VERSION_REGISTRY: Dict[str, VersionCapabilities] = {
         supports_merge=True,
         supports_config_file=True,
     ),
+    "1.4.0.0": VersionCapabilities(
+        source_types=frozenset(
+            [
+                "clickhouse",
+                "hana",
+                "mssql",
+                "msoledbsql",
+                "mysql",
+                "nzcopy",
+                "nzoledb",
+                "nzsql",
+                "odbc",
+                "oledb",
+                "oraodp",
+                "pgcopy",
+                "pgsql",
+                "teradata",
+                "adbc_mssql",
+                "adbc_pgsql",
+                "adbc_oracle",
+                "adbc_netezza",
+                "adbc_teradata",
+            ]
+        ),
+        output_formats=frozenset(
+            [
+                "csv",
+                "tsv",
+                "json",
+                "bson",
+                "parquet",
+                "xlsx",
+                "binary",
+            ]
+        ),
+        parallelism_methods=frozenset(
+            [
+                "Ctid",
+                "DataDriven",
+                "DBPartition",
+                "Ntile",
+                "NZDataSlice",
+                "None",
+                "Physical",
+                "Physloc",
+                "Random",
+                "RangeId",
+                "Rowid",
+                "Timepartition",
+            ]
+        ),
+        storage_targets=frozenset(
+            [
+                "local",
+                "s3",
+                "s3compatible",
+                "azure_blob",
+                "azure_datalake",
+                "fabric_onelake",
+                "gcs",
+            ]
+        ),
+        supports_nobanner=True,
+        supports_version_flag=True,
+        supports_cloud_profile=True,
+        supports_merge=True,
+        supports_config_file=True,
+    ),
 }
 
 
@@ -565,6 +637,21 @@ def check_version_compatibility(
         warnings.append(
             f"Parallel method 'DBPartition' requires FastBCP 1.3.0.0+, "
             f"but detected version is {ver_str}"
+        )
+    if method == "Physical" and method not in capabilities.parallelism_methods:
+        warnings.append(
+            f"Parallel method 'Physical' requires FastBCP 1.4.0.0+, "
+            f"but detected version is {ver_str}. Use the engine-specific method "
+            f"(Ctid, Rowid, Physloc or NZDataSlice) instead"
+        )
+    if (
+        method in DEPRECATED_PHYSICAL_METHODS
+        and "Physical" in capabilities.parallelism_methods
+    ):
+        warnings.append(
+            f"Parallel method '{method}' is deprecated since FastBCP 1.4 and will "
+            f"be removed in 2.0: use 'Physical', which resolves to the same "
+            f"strategy from the connection type"
         )
 
     return warnings

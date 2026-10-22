@@ -783,7 +783,8 @@ class TestHelperFunctions:
             table_size_estimate="large",
         )
 
-        assert suggestion["method"] == "Ctid"
+        assert suggestion["method"] == "Physical"
+        assert "Ctid" in suggestion["explanation"]
 
     def test_suggest_parallelism_oraodp(self):
         """Test parallelism suggestion for oraodp source."""
@@ -794,7 +795,8 @@ class TestHelperFunctions:
             table_size_estimate="medium",
         )
 
-        assert suggestion["method"] == "Rowid"
+        assert suggestion["method"] == "Physical"
+        assert "Rowid" in suggestion["explanation"]
 
     def test_suggest_parallelism_netezza(self):
         """Test parallelism suggestion for Netezza source types."""
@@ -805,7 +807,7 @@ class TestHelperFunctions:
                 has_identity_column=False,
                 table_size_estimate="large",
             )
-            assert suggestion["method"] == "NZDataSlice"
+            assert suggestion["method"] == "Physical"
 
     def test_suggest_parallelism_mssql_no_key(self):
         """Test parallelism suggestion for SQL Server without numeric key."""
@@ -816,7 +818,8 @@ class TestHelperFunctions:
             table_size_estimate="large",
         )
 
-        assert suggestion["method"] == "Physloc"
+        assert suggestion["method"] == "Physical"
+        assert "Physloc" in suggestion["explanation"]
 
     def test_suggest_parallelism_msoledbsql_no_key(self):
         """Test parallelism suggestion for msoledbsql without numeric key."""
@@ -827,7 +830,8 @@ class TestHelperFunctions:
             table_size_estimate="medium",
         )
 
-        assert suggestion["method"] == "Physloc"
+        assert suggestion["method"] == "Physical"
+        assert "Physloc" in suggestion["explanation"]
 
     def test_suggest_parallelism_with_numeric_key(self):
         """Test parallelism suggestion for table with numeric key."""
@@ -838,7 +842,7 @@ class TestHelperFunctions:
             table_size_estimate="large",
         )
 
-        assert suggestion["method"] in ["RangeId", "Random"]
+        assert suggestion["method"] in ["RangeId", "Ntile"]
 
     def test_suggest_parallelism_generic_large_table(self):
         """Test parallelism suggestion for generic large table."""
@@ -890,7 +894,23 @@ class TestAdbcCommands:
     )
     def test_parallelism_follows_native_type(self, source_type, method):
         result = suggest_parallelism_method(source_type, False, False, "large")
+        assert result["method"] == "Physical"
+        assert method in result["explanation"]
+
+    @pytest.mark.parametrize(
+        "source_type,method",
+        [("pgsql", "Ctid"), ("oraodp", "Rowid"), ("mssql", "Physloc"), ("nzsql", "NZDataSlice")],
+    )
+    def test_engine_method_before_1_4(self, source_type, method):
+        """Binaries older than 1.4 have no Physical: suggest the engine name."""
+        result = suggest_parallelism_method(
+            source_type, False, False, "large", physical_supported=False
+        )
         assert result["method"] == method
+
+    def test_teradata_no_physical(self):
+        result = suggest_parallelism_method("adbc_teradata", False, False, "large")
+        assert result["method"] != "Physical"
 
 
 def test_dbpartition_command_has_no_key_column(command_builder):
@@ -910,4 +930,24 @@ def test_dbpartition_command_has_no_key_column(command_builder):
     )
     command = command_builder.build_command(request)
     assert command[command.index("--method") + 1] == "DBPartition"
+    assert "--distributekeycolumn" not in command
+
+
+def test_physical_command_has_no_key_column(command_builder):
+    """Physical emits --method Physical and no --distributekeycolumn."""
+    request = ExportRequest(
+        source={
+            "type": "adbc_pgsql",
+            "server": "localhost:5432",
+            "database": "tpch",
+            "schema": "tpch_10",
+            "table": "orders",
+            "user": "u",
+            "password": "p",
+        },
+        output={"format": "parquet", "directory": "/tmp/out"},
+        options={"method": "Physical", "degree": 8},
+    )
+    command = command_builder.build_command(request)
+    assert command[command.index("--method") + 1] == "Physical"
     assert "--distributekeycolumn" not in command

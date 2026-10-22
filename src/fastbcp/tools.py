@@ -182,7 +182,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             "type": {
                                 "type": "string",
                                 "enum": [e.value for e in SourceConnectionType],
-                                "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL). ADBC types 'adbc_mssql' (1.0+), 'adbc_pgsql' (1.1+), 'adbc_oracle' (1.2+) and 'adbc_netezza' (1.3+) read the same databases through the Arpe ADBC drivers and write parquet output only.",
+                                "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL). ADBC types 'adbc_mssql' (1.0+), 'adbc_pgsql' (1.1+), 'adbc_oracle' (1.2+), 'adbc_netezza' (1.3+) and 'adbc_teradata' (1.4+) read the same databases through the Arpe ADBC drivers and write parquet output only.",
                             },
                             "server": {
                                 "type": "string",
@@ -302,12 +302,12 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             "method": {
                                 "type": "string",
                                 "enum": [e.value for e in ParallelismMethod],
-                                "description": "Parallelism method. Ntile: even distribution on numeric key. DataDriven: distinct value partitions, works with any data type. Physloc: SQL Server physical location (no key needed). Ctid: PostgreSQL physical tuple ID (no key needed). Rowid: Oracle physical ROWID (no key needed). RangeId: numeric min/max range. Random: modulo-based approximate distribution. Timepartition: partition by time column (FastBCP 0.30+). NZDataSlice: Netezza native slicing. DBPartition: one chunk per native table partition, for SQL Server, PostgreSQL, Oracle, MySQL and Teradata; needs schema and table, no key (FastBCP 1.3+). None: single-threaded. Call `fastbcp_info` with action='parallelism' if unsure.",
+                                "description": "Parallelism method. Ntile: even distribution on numeric key. DataDriven: distinct value partitions, works with any data type. Physical: split on the physical row location, no key needed; resolved to Ctid (PostgreSQL), Rowid (Oracle), Physloc (SQL Server) or NZDataSlice (Netezza) from the connection type; needs schema and table (FastBCP 1.4+). Physloc, Ctid, Rowid, NZDataSlice: the engine-specific names, deprecated since 1.4 (removed in 2.0), still needed on FastBCP < 1.4. RangeId: numeric min/max range. Random: modulo-based approximate distribution (avoid in production). Timepartition: partition by time column (FastBCP 0.30+). DBPartition: one chunk per native table partition, for SQL Server, PostgreSQL, Oracle, MySQL and Teradata; needs schema and table, no key (FastBCP 1.3+). None: single-threaded. Call `fastbcp_info` with action='parallelism' if unsure.",
                                 "default": "None",
                             },
                             "distribute_key_column": {
                                 "type": "string",
-                                "description": "Column for data distribution. Required when method is RangeId, Random, Ntile, or DataDriven.",
+                                "description": "Column for data distribution. Required when method is RangeId, Random, Ntile, DataDriven or Timepartition. Not used by Physical or DBPartition.",
                             },
                             "degree": {
                                 "type": "integer",
@@ -454,6 +454,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
 
     # --- Handler functions (closures over command_builder, timeout, log_dir, fastbcp_path) ---
 
+    def _physical_supported() -> bool:
+        """Whether the detected FastBCP accepts the Physical method (1.4+)."""
+        caps = command_builder.version_detector.capabilities
+        return caps is None or "Physical" in caps.parallelism_methods
+
     async def handle_preview_export(arguments: Dict[str, Any]) -> list[TextContent]:
         """Handle fastbcp_preview_export tool."""
         if command_builder is None:
@@ -490,8 +495,15 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                         has_numeric_key=False,
                         has_identity_column=False,
                         table_size_estimate="medium",
+                        physical_supported=_physical_supported(),
                     )
                     suggested_method = suggestion["method"]
+                    # Physical-location methods need schema + table, not a query
+                    source_args = arguments.get("source") or {}
+                    if suggested_method in (
+                        "Physical", "Ctid", "Rowid", "Physloc", "NZDataSlice"
+                    ) and not (source_args.get("schema") and source_args.get("table")):
+                        suggested_method = "None"
                     if suggested_method != "None":
                         if "options" not in arguments:
                             arguments["options"] = {}
@@ -872,6 +884,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 request.has_numeric_key,
                 request.has_identity_column,
                 request.table_size_estimate,
+                physical_supported=_physical_supported(),
             )
 
             # Recommend degree based on table size
@@ -989,42 +1002,57 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
         # Database-specific parallelism tips
         db_tips = {
             "pgsql": (
-                "- **Recommended parallelism**: `Ctid` (no key column needed, PostgreSQL-native)\n"
-                "- Ctid splits the table by physical page ranges — works on any table\n"
+                "- **Recommended parallelism**: `Physical` (FastBCP 1.4+, resolves to Ctid; no key column needed)\n"
+                "- Ctid splits the table by physical page ranges — works on any table; needs schema and table\n"
                 "- Alternative: `RangeId` or `Ntile` if you have a numeric key with good distribution"
             ),
             "oraodp": (
-                "- **Recommended parallelism**: `Rowid` (no key column needed, Oracle-native)\n"
-                "- Rowid splits by Oracle physical rowid ranges — works on any table\n"
+                "- **Recommended parallelism**: `Physical` (FastBCP 1.4+, resolves to Rowid; no key column needed)\n"
+                "- Rowid splits by Oracle physical rowid ranges — works on any table; needs schema and table\n"
                 "- Alternative: `RangeId` or `Ntile` with a numeric/date key"
             ),
             "mssql": (
-                "- **Recommended parallelism**: `Physloc` (no key column needed, SQL Server-native)\n"
-                "- If table has an `IDENTITY` column, `RangeId` is also excellent\n"
+                "- **Recommended parallelism**: `RangeId` when the clustered index leads with a selective integer (e.g. `IDENTITY`)\n"
+                "- Without a key: `Physical` (FastBCP 1.4+, resolves to Physloc; needs schema and table)\n"
                 "- Alternative: `Ntile` with any indexed column"
             ),
             "adbc_pgsql": (
                 "- **ADBC driver**: parquet output only (use `pgsql` for other formats)\n"
-                "- **Recommended parallelism**: `Ctid`, as for `pgsql`"
+                "- **Recommended parallelism**: `Physical` (Ctid), as for `pgsql`"
             ),
             "adbc_oracle": (
                 "- **ADBC driver**: parquet output only (use `oraodp` for other formats)\n"
-                "- **Recommended parallelism**: `Rowid`, as for `oraodp`\n"
+                "- **Recommended parallelism**: `Physical` (Rowid), as for `oraodp`\n"
                 "- Oracle native network encryption is auto-detected; override with "
-                "`FASTBCP_ADBC_ENCRYPTION` / `FASTBCP_ADBC_DATA_INTEGRITY`"
+                "`FASTBCP_ADBC_ENCRYPTION` / `FASTBCP_ADBC_DATA_INTEGRITY`\n"
+                "- FastBCP 1.4 (ArpeOracle 0.4.1): TCPS verifies the server certificate, "
+                "Kerberos forwards the TGT only with `krb5_forward=true`, token/OAuth2 logons need TCPS"
             ),
             "adbc_netezza": (
                 "- **ADBC driver**: parquet output only (use `nzsql` for other formats)\n"
-                "- **Recommended parallelism**: `NZDataSlice`, as for `nzsql`"
+                "- **Recommended parallelism**: `Physical` (NZDataSlice), as for `nzsql`"
             ),
             "adbc_mssql": (
                 "- **ADBC driver**: parquet output only (use `mssql` for other formats)\n"
-                "- **Recommended parallelism**: `Physloc`, as for `mssql`"
+                "- **Recommended parallelism**: `RangeId` on a good clustered key, else `Physical` (Physloc), as for `mssql`"
             ),
             "mysql": (
                 "- **Recommended parallelism**: `RangeId` on the primary key\n"
-                "- MySQL does not support Ctid/Rowid/Physloc\n"
+                "- MySQL does not support Physical (Ctid/Rowid/Physloc)\n"
                 "- Alternative: `Ntile` or `DataDriven` with a well-distributed column"
+            ),
+            "teradata": (
+                "- **Recommended parallelism**: `DBPartition` on a PPI table, else `Ntile` or `RangeId` on a key\n"
+                "- Teradata does not support Physical\n"
+                "- `Timepartition` on a date column; `DataDriven` on a business column"
+            ),
+            "adbc_teradata": (
+                "- **ADBC driver** (FastBCP 1.4+): parquet output only (use `teradata` for other formats)\n"
+                "- **Recommended parallelism**: as for `teradata` (`DBPartition` on PPI tables, `Ntile`, `RangeId`); "
+                "Physical is not supported\n"
+                "- User/password only: trusted authentication is refused\n"
+                "- Default logon uses TLS on port 443, no Teradata client needed; the legacy port 1025 "
+                "(no TLS, or `SSL Mode=disable`) needs Teradata Tools and Utilities (Linux: `FASTBCP_TTU_PATH`)"
             ),
         }
 

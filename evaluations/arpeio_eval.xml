@@ -12,19 +12,19 @@
 -->
 <evaluation>
   <qa_pair>
-    <question>I need to export a large PostgreSQL table to Parquet with FastBCP, but the table has no numeric key column to partition on. Which FastBCP parallelism method does the server recommend for this case?</question>
-    <answer>Ctid</answer>
+    <question>I need to export a large PostgreSQL table to Parquet with FastBCP 1.4, but the table has no numeric key column to partition on. Which FastBCP parallelism method (the value to pass to --parallelmethod) does the server recommend for this case?</question>
+    <answer>Physical</answer>
   </qa_pair>
   <qa_pair>
-    <question>Using FastBCP to export a large Oracle table that has no numeric or identity key column, which parallelism method should be used so that no key column is required?</question>
+    <question>FastBCP 1.4 introduced a "Physical" parallel method that picks an engine-specific strategy from the connection type. Which engine-specific strategy does Physical resolve to for an Oracle source (oraodp or adbc_oracle)?</question>
     <answer>Rowid</answer>
   </qa_pair>
   <qa_pair>
-    <question>For a large SQL Server table with no usable key column, which FastBCP parallelism method splits the work by physical location without needing a key?</question>
+    <question>When FastBCP 1.4's "Physical" parallel method is used on a SQL Server source (mssql, msoledbsql or adbc_mssql), which deprecated engine-specific method name does it resolve to?</question>
     <answer>Physloc</answer>
   </qa_pair>
   <qa_pair>
-    <question>FastBCP can extract from Netezza in parallel using that database's own native data-distribution mechanism. What is the name of that parallelism method?</question>
+    <question>FastBCP can extract from Netezza in parallel using that database's own native data-distribution mechanism. In FastBCP 1.4 the "Physical" method resolves to that strategy for Netezza sources. What is the name of that engine-specific strategy?</question>
     <answer>NZDataSlice</answer>
   </qa_pair>
   <qa_pair>

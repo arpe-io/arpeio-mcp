@@ -2,7 +2,7 @@
 Version mappings and URL templates for arpe.io documentation sites.
 """
 
-FASTBCP_DOC_VERSIONS = ["0.28", "0.29", "0.30", "0.31", "0.32", "1.0", "1.1", "1.2", "1.3"]
+FASTBCP_DOC_VERSIONS = ["0.28", "0.29", "0.30", "0.31", "0.32", "1.0", "1.1", "1.2", "1.3", "1.4"]
 FASTTRANSFER_DOC_VERSIONS = ["0.14", "0.15", "0.16", "0.17"]
 LAKEXPRESS_DOC_VERSIONS = ["0.2", "0.3", "0.4"]
 MIGRATORXPRESS_DOC_VERSIONS = [
@@ -36,10 +36,10 @@ DOC_URLS = {
 }
 
 # Doc versions served under a different URL path. The current FastBCP release
-# is published at /latest/ only (/1.3/ returns 404); move this alias forward
+# is published at /latest/ only (/1.4/ returns 404); move this alias forward
 # when a newer version becomes "latest".
 DOC_URL_VERSION_ALIASES = {
-    "fastbcp": {"1.3": "latest"},
+    "fastbcp": {"1.4": "latest"},
 }
 
 BLOG_URL = "https://blog.arpe.io/"
