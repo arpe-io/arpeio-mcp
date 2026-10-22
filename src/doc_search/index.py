@@ -28,7 +28,9 @@ from .doc_versions import (
     BLOG_URL,
     DOC_TTL_DAYS,
     DOC_URLS,
+    RELEASE_NOTES_UNPUBLISHED,
     VERSION_LISTS,
+    DOC_URL_SCOPES,
     DOC_URL_VERSION_ALIASES,
 )
 
@@ -145,6 +147,8 @@ class SearchEngine:
         """
         if product in ADBC_DRIVERS:
             return self._get_adbc_whats_new(product, version)
+        if product in RELEASE_NOTES_UNPUBLISHED:
+            return self._get_whats_new_sections(product, version)
 
         if product not in self._indexes:
             return []
@@ -192,6 +196,34 @@ class SearchEngine:
         tag = re.compile(r"\(v" + re.escape(version.lstrip("vV")) + r"(?:[.)])")
         return [c for c in page if tag.search(c.get("source", ""))]
 
+    def _get_whats_new_sections(self, product: str, version: Optional[str]) -> List[dict]:
+        """Return the "What's new in X.Y" sections of a product without release-notes pages.
+
+        MigratorXpress publishes no release notes; its 0.7 intro page has a
+        "What's new in 0.7" section listing the 0.7.x changes. With `version`,
+        only a section whose X.Y matches it ('0.7', or a patch such as '0.7.2')
+        is returned.
+        """
+        if product not in self._indexes:
+            return []
+        chunks, _ = self._indexes[product]
+        heading = re.compile(r"what[\u2019']s new in v?(\d+(?:\.\d+)*)", re.IGNORECASE)
+        wanted = version.lstrip("vV") if version else None
+        sections = []
+        for c in chunks:
+            m = heading.search(c.get("source", ""))
+            if not m:
+                continue
+            section_version = m.group(1)
+            if wanted and not (
+                wanted == section_version
+                or wanted.startswith(section_version + ".")
+                or section_version.startswith(wanted + ".")
+            ):
+                continue
+            sections.append(c)
+        return sections
+
     async def initialize(self, version_info: Optional[Dict] = None) -> None:
         """Initialize all indexes from cache or by crawling.
 
@@ -238,18 +270,21 @@ class SearchEngine:
                         pass
 
             # Load or refresh each doc source
-            needs_crawl: List[Tuple[str, str, str]] = []  # (product, url, version)
+            # (product, sitemap url, version, url prefix or None)
+            needs_crawl: List[Tuple[str, str, str, Optional[str]]] = []
 
             for product, url_template in DOC_URLS.items():
                 known_versions = VERSION_LISTS.get(product, [])
                 version = best_version_for(product, detected_versions.get(product), known_versions)
 
                 # Build URL
+                url_version = DOC_URL_VERSION_ALIASES.get(product, {}).get(version, version)
                 if "{version}" in url_template:
-                    url_version = DOC_URL_VERSION_ALIASES.get(product, {}).get(version, version)
                     url = url_template.format(version=url_version)
                 else:
                     url = url_template
+                scope = DOC_URL_SCOPES.get(product)
+                url_prefix = scope.format(version=url_version) if scope else None
 
                 cache_path = get_cache_path(product, version)
 
@@ -261,7 +296,7 @@ class SearchEngine:
                         continue
 
                 # Need to crawl
-                needs_crawl.append((product, url, version))
+                needs_crawl.append((product, url, version, url_prefix))
 
             # Blog
             blog_cache_path = get_cache_path("blog")
@@ -270,7 +305,7 @@ class SearchEngine:
                 if cached:
                     self._build_index("blog", cached)
             else:
-                needs_crawl.append(("blog", BLOG_URL, ""))
+                needs_crawl.append(("blog", BLOG_URL, "", None))
 
             # Crawl missing/stale sources
             if needs_crawl:
@@ -283,19 +318,22 @@ class SearchEngine:
             self._ready = True
             self._loading = False
 
-    async def _crawl_sources(self, sources: List[Tuple[str, str, str]]) -> None:
+    async def _crawl_sources(
+        self, sources: List[Tuple[str, str, str, Optional[str]]]
+    ) -> None:
         """Crawl documentation sources and build indexes.
 
         Args:
-            sources: List of (product, url, version) tuples to crawl.
+            sources: List of (product, url, version, url_prefix) tuples to crawl;
+                url_prefix (or None) limits the crawl to one version's pages.
         """
         async with httpx.AsyncClient() as client:
-            for product, url, version in sources:
+            for product, url, version, url_prefix in sources:
                 try:
                     if product == "blog":
                         chunks = await crawl_blog(url, client)
                     else:
-                        chunks = await crawl_doc_site(url, product, client)
+                        chunks = await crawl_doc_site(url, product, client, url_prefix)
 
                     if chunks:
                         self._build_index(product, chunks)

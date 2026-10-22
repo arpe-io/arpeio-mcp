@@ -15,6 +15,8 @@
 ### Changed
 
 - Server instructions list `DBPartition` and `Timepartition` for FastTransfer 0.18+ as well as FastBCP.
+- **MigratorXpress docs moved to [migratorxpress-docs.arpe.io](https://migratorxpress-docs.arpe.io/)**: the old GitHub Pages site (aetperf.github.io/MigratorXpress-Documentation) is unpublished, so `search_docs` returned no MigratorXpress pages. The new site is crawled from its root `sitemap.xml`, limited to the pages of one doc version (new `DOC_URL_SCOPES` setting): a detected 0.7.x binary (or no binary) gets the 0.7 docs at `/latest/`, a 0.6.x binary the 0.6 docs at `/0.6/`. MigratorXpress doc versions are now `0.6` and `0.7` instead of one per patch release.
+- `arpe_release_notes` for `migratorxpress`: the docs publish no release-notes pages (the old ones already returned 404). The tool now returns the "What's new in 0.7" section of the 0.7 docs home page when it is indexed (for `version` `0.7` or a `0.7.x` patch), and otherwise says that MigratorXpress has no published release notes and links to the docs, instead of suggesting a crawl. Both answers carry `release_notes_published: false` and `docs_url` in the structured output.
 
 ## [0.3.8] - 2026-10-22
 

@@ -195,6 +195,7 @@ async def crawl_doc_site(
     sitemap_url: str,
     source_name: str,
     client: httpx.AsyncClient,
+    url_prefix: Optional[str] = None,
 ) -> List[dict]:
     """Crawl a complete documentation site via its sitemap.
 
@@ -202,13 +203,18 @@ async def crawl_doc_site(
         sitemap_url: URL to the sitemap page.
         source_name: Product name (e.g., 'fastbcp').
         client: httpx async client.
+        url_prefix: When set, only the sitemap URLs starting with it are
+            crawled (one version of a site whose sitemap lists every version).
 
     Returns:
         List of all chunks from the site.
     """
     page_urls = await crawl_sitemap_page(sitemap_url, client)
+    if url_prefix:
+        page_urls = [u for u in page_urls if u.startswith(url_prefix)]
     if not page_urls:
-        logger.warning(f"No URLs found for {source_name} at {sitemap_url}")
+        scope = f" under {url_prefix}" if url_prefix else ""
+        logger.warning(f"No URLs found for {source_name} at {sitemap_url}{scope}")
         return []
 
     all_chunks = []

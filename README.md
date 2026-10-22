@@ -249,8 +249,8 @@ Read-only advisory tools were consolidated into one `*_info` tool per product (w
 ### Meta (4 tools)
 - `arpe_get_status` — Status of all four CLIs (installed / command-builder-only)
 - `arpe_quick_start` — Detect the right tool from a plain-English use case and return a workflow guide
-- `arpe_release_notes` — Return release-notes chunks for any product (`product="fastbcp" | "fasttransfer" | "lakexpress" | "migratorxpress"`, or an ADBC driver load name `"arpemssql" | "arpepgsql" | "arpeoracle" | "arpenz" | "arpeteradata"`; optional `version`)
-- `search_docs` — BM25 full-text search over arpe.io docs sites (including [adbc-drivers-docs.arpe.io](https://adbc-drivers-docs.arpe.io/)) and blog
+- `arpe_release_notes` — Return release-notes chunks for any product (`product="fastbcp" | "fasttransfer" | "lakexpress" | "migratorxpress"`, or an ADBC driver load name `"arpemssql" | "arpepgsql" | "arpeoracle" | "arpenz" | "arpeteradata"`; optional `version`). MigratorXpress publishes no release-notes pages: its "What's new in 0.7" summary from [migratorxpress-docs.arpe.io](https://migratorxpress-docs.arpe.io/) is returned instead
+- `search_docs` — BM25 full-text search over arpe.io docs sites (including [migratorxpress-docs.arpe.io](https://migratorxpress-docs.arpe.io/) and [adbc-drivers-docs.arpe.io](https://adbc-drivers-docs.arpe.io/)) and blog
 
 ## Structured output
 

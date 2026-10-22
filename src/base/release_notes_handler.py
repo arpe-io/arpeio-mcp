@@ -10,6 +10,7 @@ from mcp.types import Tool, ToolAnnotations, TextContent
 
 from .structured import respond
 from ..adbc.drivers import ADBC_DRIVERS
+from ..doc_search.doc_versions import RELEASE_NOTES_UNPUBLISHED
 from ..doc_search.index import SearchEngine
 
 # "fastbcp" | "fasttransfer" | "lakexpress" | "migratorxpress", or an ADBC
@@ -66,6 +67,14 @@ def build_release_notes_tool(
         },
     )
 
+    # Products without release-notes pages (MigratorXpress): say so instead of
+    # pointing at pages that do not exist.
+    unpublished_docs_url: Optional[str] = RELEASE_NOTES_UNPUBLISHED.get(product)
+    extra: Dict[str, Any] = (
+        {"release_notes_published": False, "docs_url": unpublished_docs_url}
+        if unpublished_docs_url else {}
+    )
+
     async def handler(arguments: Dict[str, Any]) -> Tuple[List[TextContent], Dict[str, Any]]:
         version: Optional[str] = arguments.get("version") or None
         chunks = search_engine.get_release_notes(product, version)
@@ -75,6 +84,13 @@ def build_release_notes_tool(
                 msg = (
                     f"# {display} Release Notes\n\n"
                     "Documentation index is still loading. Try again in a moment."
+                )
+            elif unpublished_docs_url:
+                scope = f" for version {version!r}" if version else ""
+                msg = (
+                    f"# {display} Release Notes\n\n"
+                    f"{display} has no published release notes{scope}. "
+                    f"See the documentation: {unpublished_docs_url}"
                 )
             elif version:
                 msg = (
@@ -97,11 +113,17 @@ def build_release_notes_tool(
                 "count": 0,
                 "chunks": [],
                 "index_ready": bool(search_engine.ready),
+                **extra,
             })
 
         parts: List[str] = [f"# {display} Release Notes"]
         if version:
             parts.append(f"*Filtered to version {version}*")
+        if unpublished_docs_url:
+            parts.append(
+                f"*{display} has no published release notes; this is the \"What's new\" "
+                f"summary from the documentation ({unpublished_docs_url}).*"
+            )
         parts.append("")
         seen_urls = set()
         structured_chunks: List[Dict[str, str]] = []
@@ -127,6 +149,7 @@ def build_release_notes_tool(
             "count": len(structured_chunks),
             "chunks": structured_chunks,
             "index_ready": bool(search_engine.ready),
+            **extra,
         })
 
     return tool, handler

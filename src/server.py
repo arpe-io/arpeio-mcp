@@ -244,6 +244,14 @@ all_tools.append(
                     "properties": {"url": {"type": "string"}, "text": {"type": "string"}},
                 },
             },
+            "release_notes_published": {
+                "type": "boolean",
+                "description": "Present and false for products without release-notes pages (MigratorXpress).",
+            },
+            "docs_url": {
+                "type": "string",
+                "description": "Docs to consult when release_notes_published is false.",
+            },
         }),
         inputSchema={
             "type": "object",
