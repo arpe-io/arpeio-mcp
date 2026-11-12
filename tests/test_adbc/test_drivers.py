@@ -19,11 +19,12 @@ from src.fastbcp.version import ADBC_MIN_VERSIONS
 class TestRegistry:
     def test_commercial_names_and_latest_versions(self):
         assert {d.name: d.version for d in ADBC_DRIVERS.values()} == {
-            "ArpeMSSQL": "0.7.6",
-            "ArpePGSQL": "0.4.7",
-            "ArpeOracle": "0.4.2",
-            "ArpeNetezza": "0.3.7",
-            "ArpeTeradata": "0.3.5",
+            "ArpeMSSQL": "0.8.0",
+            "ArpePGSQL": "0.5.2",
+            "ArpeOracle": "0.4.5",
+            "ArpeNetezza": "0.3.9",
+            "ArpeTeradata": "0.3.6",
+            "ArpeDb2": "0.4.0",
         }
 
     def test_netezza_load_name_differs_from_docs_slug(self):
@@ -46,13 +47,19 @@ class TestRegistry:
         assert find_driver("arpenetezza") is find_driver("arpenz") is ADBC_DRIVERS["arpenz"]
 
     def test_find_driver_unknown(self):
-        assert find_driver("arpedb2") is None
+        assert find_driver("mysql") is None
         assert find_driver("") is None
+
+    def test_find_driver_db2(self):
+        drv = find_driver("ArpeDb2")
+        assert drv is ADBC_DRIVERS["arpedb2"]
+        assert drv.fastbcp_type is None
+        assert drv.docs_url.endswith("/drivers/arpedb2/")
 
     def test_capabilities(self):
         caps = get_supported_capabilities()
         assert [d["load_name"] for d in caps["drivers"]] == list(ADBC_DRIVERS)
-        assert caps["upcoming"][0]["name"] == "ArpeDb2"
+        assert caps["upcoming"] == []
 
 
 class TestAdbcInfoTool:
@@ -77,16 +84,16 @@ class TestAdbcInfoTool:
     async def test_detail(self):
         content, structured = await self.handler("adbc_info", {"driver": "adbc_teradata"})
         text = content[0].text
-        assert "ArpeTeradata" in text and "v0.3.5" in text
+        assert "ArpeTeradata" in text and "v0.3.6" in text
         assert 'driver="arpeteradata"' in text
         assert "sh -s -- arpeteradata --license" in structured["install"]["linux"]
         assert structured["drivers"][0]["fastbcp_type"] == "adbc_teradata"
 
     @pytest.mark.asyncio
-    async def test_upcoming_driver(self):
+    async def test_db2_driver(self):
         content, structured = await self.handler("adbc_info", {"driver": "ArpeDb2"})
-        assert structured["status"] == "error"
-        assert "not published yet" in content[0].text
+        assert structured["status"] == "ok"
+        assert "arpedb2" in content[0].text
 
     @pytest.mark.asyncio
     async def test_unknown_driver(self):

@@ -45,7 +45,7 @@ def create_tools() -> Tuple[List[Tool], Any]:
             name="adbc_info",
             description=(
                 "Get information about the Arpe ADBC drivers: ArpeMSSQL (SQL Server), ArpePGSQL "
-                "(PostgreSQL), ArpeOracle (Oracle), ArpeNetezza (Netezza) and ArpeTeradata (Teradata). "
+                "(PostgreSQL), ArpeOracle (Oracle), ArpeNetezza (Netezza), ArpeTeradata (Teradata) and ArpeDb2 (IBM Db2). "
                 "They are native, licence-gated ADBC drivers that return Apache Arrow from any ADBC "
                 "client (Python, C/C++, C#, Go, Java, R, Rust) and back FastBCP's adbc_* connection types. "
                 "Omit `driver` to list the family with current versions; pass it for the load name, "
