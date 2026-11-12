@@ -60,7 +60,7 @@ ADBC_DRIVERS: Dict[str, AdbcDriver] = {
         database="Microsoft SQL Server",
         also_covers="Azure SQL, Microsoft Fabric Warehouse",
         load_name="arpemssql",
-        version="0.7.6",
+        version="0.8.0",
         protocol="Native MS-TDS 7.4 and 8.0 (strict encryption) over TCP/TLS; no ODBC, no SQL Server client libraries",
         authentication="SQL logins, Microsoft Entra ID, Windows SSPI, Kerberos on Linux",
         uri_example="sqlserver://sa:<pw>@host:1433/?database=db&encrypt=true",
@@ -73,9 +73,9 @@ ADBC_DRIVERS: Dict[str, AdbcDriver] = {
         database="PostgreSQL",
         also_covers="PostgreSQL-compatible services",
         load_name="arpepgsql",
-        version="0.4.7",
+        version="0.5.2",
         protocol="Native Frontend/Backend (FEBE) v3 over TCP/TLS; no libpq",
-        authentication="SCRAM-SHA-256 (with channel binding), MD5, cleartext, Windows SSPI",
+        authentication="SCRAM-SHA-256 (with channel binding), MD5, cleartext, Kerberos on Linux, Windows SSPI",
         uri_example="postgresql://user:<pw>@host:5432/mydb?sslmode=require",
         docs_slug="arpepgsql",
         fastbcp_type="adbc_pgsql",
@@ -86,9 +86,9 @@ ADBC_DRIVERS: Dict[str, AdbcDriver] = {
         database="Oracle",
         also_covers="Oracle Cloud Autonomous Database",
         load_name="arpeoracle",
-        version="0.4.2",
+        version="0.4.5",
         protocol="Native TNS + TTC over TCP/TLS; no OCI, no Instant Client, no ODBC",
-        authentication="O5LOGON password, proxy (CONNECT THROUGH), OCI IAM token, OAuth2 / Microsoft Entra ID bearer token",
+        authentication="O5LOGON password, proxy (CONNECT THROUGH), Kerberos on Linux, OCI IAM token, OAuth2 / Microsoft Entra ID bearer token",
         uri_example="oracle://scott:tiger@dbhost:2484/orclpdb1?ssl_mode=verify-full",
         docs_slug="arpeoracle",
         fastbcp_type="adbc_oracle",
@@ -99,7 +99,7 @@ ADBC_DRIVERS: Dict[str, AdbcDriver] = {
         database="IBM Netezza",
         also_covers="IBM Cloud Netezza Performance Server",
         load_name="arpenz",
-        version="0.3.7",
+        version="0.3.9",
         protocol="Native Netezza protocol (HSV2 handshake + DBOS binary results) over TCP/TLS; no ODBC, no nzpy",
         authentication="Password (cleartext / MD5 / SHA-256) over TLS",
         uri_example="netezza://admin:<pw>@nzhost:5480/SYSTEM?sslmode=verify-full",
@@ -112,7 +112,7 @@ ADBC_DRIVERS: Dict[str, AdbcDriver] = {
         database="Teradata",
         also_covers="Teradata cloud environments",
         load_name="arpeteradata",
-        version="0.3.5",
+        version="0.3.6",
         protocol=(
             "Native Teradata parcel protocol; no ODBC, no teradatasql. Logon over TLS needs "
             "no Teradata software; servers without TLS are reached through an installed TTU (CLIv2)"
@@ -123,12 +123,21 @@ ADBC_DRIVERS: Dict[str, AdbcDriver] = {
         fastbcp_type="adbc_teradata",
         fastbcp_min_version="1.4",
     ),
+    "arpedb2": AdbcDriver(
+        name="ArpeDb2",
+        database="IBM Db2",
+        also_covers="Db2 for LUW, Db2 for i (IBM i)",
+        load_name="arpedb2",
+        version="0.4.0",
+        protocol="Native DRDA over TCP/TLS; no Db2 client, no CLI/ODBC, no JCC",
+        authentication="User / password (encrypted logon negotiated), Kerberos, token as password over verified TLS",
+        uri_example="db2://db2inst1:<pw>@db2.example.com:50001/sample?sslmode=verify-full",
+        docs_slug="arpedb2",
+    ),
 }
 
 # Announced on the docs site, not downloadable yet.
-UPCOMING_DRIVERS: List[Dict[str, str]] = [
-    {"name": "ArpeDb2", "database": "IBM Db2", "load_name": "arpedb2", "status": "coming soon"},
-]
+UPCOMING_DRIVERS: List[Dict[str, str]] = []
 
 # Driver lookup accepts the load name, the commercial name, the docs slug or
 # the FastBCP connection type, case-insensitively.

@@ -7,8 +7,8 @@ A Model Context Protocol (MCP) server that exposes all Arpe.io data tools:
 - FastTransfer: High-performance parallel data transfer between databases
 - LakeXpress: Automated database-to-cloud data pipeline as Parquet
 - MigratorXpress: Cross-platform database migration with parallel transfer
-- Arpe ADBC drivers: ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza and
-  ArpeTeradata (reference information; the drivers are libraries, not CLIs)
+- Arpe ADBC drivers: ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza,
+  ArpeTeradata and ArpeDb2 (reference information; the drivers are libraries, not CLIs)
 """
 
 import os
@@ -224,7 +224,7 @@ all_tools.append(
             "Return release-notes chunks for any Arpe.io product. "
             "Pass `product` to select which tool and optionally `version` to filter "
             "to a specific release. ADBC drivers are selected by load name "
-            "(arpemssql, arpepgsql, arpeoracle, arpenz, arpeteradata) and return "
+            "(arpemssql, arpepgsql, arpeoracle, arpenz, arpeteradata, arpedb2) and return "
             "their \"What's new\" history. Read-only; queries the local docs cache."
         ),
         annotations=ToolAnnotations(
@@ -262,7 +262,7 @@ all_tools.append(
                     "description": (
                         "Which product's release notes to retrieve. ADBC drivers use their load name: "
                         "arpemssql (ArpeMSSQL), arpepgsql (ArpePGSQL), arpeoracle (ArpeOracle), "
-                        "arpenz (ArpeNetezza), arpeteradata (ArpeTeradata)."
+                        "arpenz (ArpeNetezza), arpeteradata (ArpeTeradata), arpedb2 (ArpeDb2)."
                     ),
                 },
                 "version": {
@@ -470,7 +470,7 @@ _RESOURCES = [
     Resource(
         uri=f"{_RESOURCE_BASE}/adbc-drivers",
         name="Arpe ADBC Drivers",
-        description="ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza and ArpeTeradata: versions, load names, URIs and FastBCP connection types",
+        description="ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza, ArpeTeradata and ArpeDb2: versions, load names, URIs and FastBCP connection types",
         mimeType="application/json",
     ),
 ]
@@ -656,8 +656,8 @@ async def handle_arpe_quick_start(arguments: dict) -> list[TextContent]:
         },
         "adbc": {
             "name": "Arpe ADBC drivers",
-            "purpose": "Native ADBC drivers returning Apache Arrow: ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza, ArpeTeradata",
-            "when": "Read or bulk-load SQL Server, PostgreSQL, Oracle, Netezza or Teradata as Arrow from your own code (Python, C/C++, C#, Go, Java, R, Rust)",
+            "purpose": "Native ADBC drivers returning Apache Arrow: ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza, ArpeTeradata, ArpeDb2",
+            "when": "Read or bulk-load SQL Server, PostgreSQL, Oracle, Netezza, Teradata or Db2 as Arrow from your own code (Python, C/C++, C#, Go, Java, R, Rust)",
             "warning": "To export tables to Parquet files without writing code, FastBCP's adbc_* connection types already use these drivers.",
             "params": "driver (load name), connection URI or options, Arpeio licence",
             "steps": [
@@ -681,7 +681,7 @@ async def handle_arpe_quick_start(arguments: dict) -> list[TextContent]:
                            "cross-platform", "ddl", "translate schema", "copy constraints",
                            "primary key", "foreign key"],
         "adbc": ["adbc", "arrow", "driver", "dataframe", "pandas", "polars", "python",
-                 "arpemssql", "arpepgsql", "arpeoracle", "arpenetezza", "arpenz", "arpeteradata"],
+                 "arpemssql", "arpepgsql", "arpeoracle", "arpenetezza", "arpenz", "arpeteradata", "arpedb2", "db2"],
     }
 
     def _detect_product(text: str) -> str | None:

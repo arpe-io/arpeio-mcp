@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.10] - 2026-11-13
+
+### Added
+
+- **ArpeDb2 0.4.0** (IBM Db2 for LUW and Db2 for i, load name `arpedb2`) is listed as a published driver: `adbc_info` returns its load name, URI, authentication, installers and docs links, and `arpe_release_notes` accepts `arpedb2`. It has no FastBCP connection type.
+
+### Changed
+
+- **Latest ADBC driver versions**: ArpeMSSQL 0.8.0, ArpePGSQL 0.5.2, ArpeOracle 0.4.5, ArpeNetezza 0.3.9, ArpeTeradata 0.3.6. ArpePGSQL and ArpeOracle list Kerberos on Linux among their authentication methods.
+
 ## [0.3.9] - 2026-10-22
 
 ### Added

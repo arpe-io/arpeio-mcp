@@ -10,7 +10,7 @@ arpeio-mcp provides four high-performance data tools for database export, \
 transfer, lake pipelines, and cross-platform migration. Each tool wraps a \
 native CLI binary with parallel execution support. It also documents the \
 Arpe ADBC drivers (ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza, \
-ArpeTeradata), the native drivers behind FastBCP's `adbc_*` connection types.
+ArpeTeradata, ArpeDb2), the native drivers behind FastBCP's `adbc_*` connection types.
 
 ## Tool Selection
 
@@ -88,13 +88,14 @@ from any ADBC driver manager.
 
 | Driver | Database | Load name | Latest | FastBCP type |
 |--------|----------|-----------|--------|--------------|
-| **ArpeMSSQL** | SQL Server, Azure SQL, Fabric | `arpemssql` | 0.7.6 | `adbc_mssql` |
-| **ArpePGSQL** | PostgreSQL and compatibles | `arpepgsql` | 0.4.7 | `adbc_pgsql` |
-| **ArpeOracle** | Oracle, Oracle Cloud ADB | `arpeoracle` | 0.4.2 | `adbc_oracle` |
-| **ArpeNetezza** | IBM Netezza / Cloud NPS | `arpenz` | 0.3.7 | `adbc_netezza` |
-| **ArpeTeradata** | Teradata | `arpeteradata` | 0.3.5 | `adbc_teradata` |
+| **ArpeMSSQL** | SQL Server, Azure SQL, Fabric | `arpemssql` | 0.8.0 | `adbc_mssql` |
+| **ArpePGSQL** | PostgreSQL and compatibles | `arpepgsql` | 0.5.2 | `adbc_pgsql` |
+| **ArpeOracle** | Oracle, Oracle Cloud ADB | `arpeoracle` | 0.4.5 | `adbc_oracle` |
+| **ArpeNetezza** | IBM Netezza / Cloud NPS | `arpenz` | 0.3.9 | `adbc_netezza` |
+| **ArpeTeradata** | Teradata | `arpeteradata` | 0.3.6 | `adbc_teradata` |
+| **ArpeDb2** | IBM Db2 (LUW, Db2 for i) | `arpedb2` | 0.4.0 | - |
 
-ArpeDb2 (IBM Db2) is announced but not published. Call `adbc_info` for \
+Call `adbc_info` for \
 URIs, install commands and licence setup, and `arpe_release_notes` with the \
 load name for a driver's release history. Docs: https://adbc-drivers-docs.arpe.io/
 
