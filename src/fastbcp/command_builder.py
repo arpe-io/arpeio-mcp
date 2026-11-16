@@ -15,6 +15,7 @@ from .validators import (
     ExportRequest,
     SourceConnectionConfig,
     OutputConfig,
+    BACKUP_TYPES,
     native_source_type,
 )
 from .version import VERSION_REGISTRY
@@ -63,6 +64,8 @@ class CommandBuilder(BaseCommandBuilder):
             "supports_cloud_profile": caps.supports_cloud_profile,
             "supports_merge": caps.supports_merge,
             "supports_config_file": caps.supports_config_file,
+            "supports_backup_encryption": caps.supports_backup_encryption,
+            "supports_backup_rman_paths": caps.supports_backup_rman_paths,
         }
 
     def build_command(
@@ -103,7 +106,19 @@ class CommandBuilder(BaseCommandBuilder):
         params.extend(["--sourceconnectiontype", source.type])
 
         # Connection string or individual parameters
-        if source.connect_string:
+        if source.type in BACKUP_TYPES:
+            # Backup files: --server is the backup directory, --sourceuser /
+            # --sourcepassword the private key of an encrypted backup_mssql
+            # backup, and a connection string only carries driver options.
+            if source.server:
+                params.extend(["--sourceserver", source.server])
+            if source.user:
+                params.extend(["--sourceuser", source.user])
+            if source.password:
+                params.extend(["--sourcepassword", source.password])
+            if source.connect_string:
+                params.extend(["--sourceconnectstring", source.connect_string])
+        elif source.connect_string:
             params.extend(["--sourceconnectstring", source.connect_string])
         elif source.dsn:
             params.extend(["--sourcedsn", source.dsn])
@@ -202,7 +217,7 @@ class CommandBuilder(BaseCommandBuilder):
         params = []
 
         # Parallelism method
-        params.extend(["--method", options.method.value])
+        params.extend(["--parallelmethod", options.method.value])
 
         # Distribute key column
         if options.distribute_key_column:
@@ -218,7 +233,7 @@ class CommandBuilder(BaseCommandBuilder):
                 )
 
         # Degree of parallelism
-        params.extend(["--degree", str(options.degree)])
+        params.extend(["--paralleldegree", str(options.degree)])
 
         # Note: FastBCP (unlike FastTransfer) has no --loadmode, --batchsize or
         # --mapmethod flags. They are intentionally not emitted here.
@@ -335,7 +350,13 @@ def get_supported_formats() -> Dict[str, Any]:
                 "xlsx",
                 "binary",
             ],
-            "ADBC (adbc_mssql 1.0+, adbc_pgsql 1.1+, adbc_oracle 1.2+, adbc_netezza 1.3+, adbc_teradata 1.4+)": [
+            "ADBC (adbc_mssql 1.0+, adbc_pgsql 1.1+, adbc_oracle 1.2+, adbc_netezza 1.3+, adbc_teradata 1.4+, adbc_db2 1.7+)": [
+                "parquet",
+            ],
+            "SQL Server backup files .bak (backup_mssql 1.5+: full, differential, encrypted / TDE)": [
+                "parquet",
+            ],
+            "Oracle RMAN backup sets (backup_rman 1.6+: full, incremental from 1.6.8)": [
                 "parquet",
             ],
         },
@@ -382,6 +403,17 @@ def suggest_parallelism_method(
         return {
             "method": "None",
             "explanation": "Table is small - parallelism overhead would likely reduce performance. Use None for best results.",
+        }
+
+    # Backup files: None or Physical (resolved to Pages), nothing else
+    if source_lower in ("backup_mssql", "backup_rman"):
+        return {
+            "method": "Physical",
+            "explanation": (
+                "Backup source detected: only None and Physical are available. Physical "
+                "resolves to Pages, each thread reading its own slice of the table's "
+                "pages (or rowgroups, or blocks); it needs schema and table, no key column."
+            ),
         }
 
     def physical(engine_method: str, explanation: str) -> Dict[str, str]:

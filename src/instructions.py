@@ -46,8 +46,8 @@ source database and available key columns:
 | **Random** | No suitable key; approximate distribution via modulo | Yes (numeric) |
 | **NZDataSlice** | Netezza only; uses native data slicing | No |
 | **Timepartition** | FastBCP 0.30+, FastTransfer 0.18+; partitions by time column (FastTransfer key: tuple such as `(date_col,year,month)`) | Yes (datetime) |
-| **DBPartition** | FastBCP 1.3+, FastTransfer 0.18+; one chunk per native table partition (SQL Server, PostgreSQL, Oracle, MySQL, Teradata); needs schema + table | No |
-| **Physical** | FastBCP 1.4+; physical row location, resolved to PhysLoc / Ctid / Rowid / NZDataSlice from the connection type (SQL Server, PostgreSQL, Oracle, Netezza only); needs schema + table | No |
+| **DBPartition** | FastBCP 1.3+, FastTransfer 0.18+; one chunk per native table partition (SQL Server, PostgreSQL, Oracle, MySQL, Teradata; FastBCP 1.7+ also Db2 for LUW through `adbc_db2`); needs schema + table | No |
+| **Physical** | FastBCP 1.4+; physical row location, resolved to PhysLoc / Ctid / Rowid / NZDataSlice from the connection type (SQL Server, PostgreSQL, Oracle, Netezza only), and to Pages for the backup types `backup_mssql` / `backup_rman`; needs schema + table | No |
 
 Default recommendations:
 - Numeric primary key exists → **Ntile**
@@ -93,7 +93,7 @@ from any ADBC driver manager.
 | **ArpeOracle** | Oracle, Oracle Cloud ADB | `arpeoracle` | 0.4.5 | `adbc_oracle` |
 | **ArpeNetezza** | IBM Netezza / Cloud NPS | `arpenz` | 0.3.9 | `adbc_netezza` |
 | **ArpeTeradata** | Teradata | `arpeteradata` | 0.3.6 | `adbc_teradata` |
-| **ArpeDb2** | IBM Db2 (LUW, Db2 for i) | `arpedb2` | 0.4.0 | - |
+| **ArpeDb2** | IBM Db2 (LUW, Db2 for i) | `arpedb2` | 0.4.0 | `adbc_db2` |
 
 Call `adbc_info` for \
 URIs, install commands and licence setup, and `arpe_release_notes` with the \
@@ -103,12 +103,35 @@ load name for a driver's release history. Docs: https://adbc-drivers-docs.arpe.i
 
 FastBCP 1.x adds ADBC connection types that read through the Arpe ADBC \
 drivers: `adbc_mssql` (ArpeMSSQL, 1.0+), `adbc_pgsql` (ArpePGSQL, 1.1+), \
-`adbc_oracle` (ArpeOracle, 1.2+), `adbc_netezza` (ArpeNetezza, 1.3+) and \
-`adbc_teradata` (ArpeTeradata, 1.4+). They only write **Parquet** \
+`adbc_oracle` (ArpeOracle, 1.2+), `adbc_netezza` (ArpeNetezza, 1.3+), \
+`adbc_teradata` (ArpeTeradata, 1.4+) and `adbc_db2` (ArpeDb2, 1.7+, IBM Db2 \
+with no IBM client). They only write **Parquet** \
 output; use the native type (`mssql`, `pgsql`, `oraodp`, `nzsql`, `teradata`) \
 for CSV, JSON and the other formats. Parallelism methods follow the native type \
-(Physical on SQL Server, PostgreSQL, Oracle and Netezza; no Physical on Teradata). \
-`adbc_teradata` refuses trusted authentication.
+(Physical on SQL Server, PostgreSQL, Oracle and Netezza; no Physical on Teradata \
+or Db2). `adbc_db2` takes `host[:port]` (port 50000 by default) and requires the \
+database name; it offers None, Random, DataDriven, RangeId, Ntile, Timepartition \
+and DBPartition (range-partitioned Db2 for LUW tables). `adbc_teradata` and \
+`adbc_db2` refuse trusted authentication.
+
+## FastBCP backup connection types
+
+FastBCP reads tables straight from backups, without restoring them and \
+without a database server: `backup_mssql` (1.5+, SQL Server `.bak` files: full, \
+striped, differential from 1.6.7, encrypted or TDE from 1.6.6) and \
+`backup_rman` (1.6+, Oracle RMAN backup sets: full, incremental from 1.6.8). \
+`server` is the directory of the backup files and `database` names the files \
+(names or patterns separated by `;`; `backup_rman` 1.6.8+ also paths and \
+`**`). No login: `backup_mssql` takes the certificate's private key file in \
+`user` (and its password) for encrypted backups; `backup_rman` takes no \
+credentials. Parquet output only; parallel methods **None** and **Physical** \
+(resolved to Pages) only; give `schema` + `table`, or a `query` limited to \
+`SELECT * | col1, col2, ... FROM [schema.]table` (`backup_rman`: \
+`[[container.]owner.]table`).
+
+FastBCP 1.7+ accepts connection types, parallel methods and the other \
+enumerated values in any case. Use the spellings listed in the tool schemas: \
+the MCP always emits the canonical spelling, which FastBCP < 1.7 requires.
 
 ## LakeXpress 0.4.0+ notes
 

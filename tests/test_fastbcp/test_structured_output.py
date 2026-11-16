@@ -58,3 +58,99 @@ async def test_execute_blocked_without_binary_conforms():
     })
     assert structured["status"] == "error"
     jsonschema.validate(structured, EXECUTE_OUTPUT_SCHEMA)
+
+
+def _tool(tools, name):
+    return next(t for t in tools if t.name == name)
+
+
+def test_input_schema_lists_new_source_types():
+    tools, _ = _handler()
+    preview = _tool(tools, "fastbcp_preview_export")
+    enum = preview.inputSchema["properties"]["source"]["properties"]["type"]["enum"]
+    assert {"adbc_db2", "backup_mssql", "backup_rman"} <= set(enum)
+    assert "hanaexport" not in enum
+    info = _tool(tools, "fastbcp_info")
+    assert "adbc_db2" in info.inputSchema["properties"]["source_type"]["enum"]
+
+
+@pytest.mark.asyncio
+async def test_preview_backup_auto_suggests_physical():
+    _, handler = _handler()
+    content, structured = await handler("fastbcp_preview_export", {
+        "source": {"type": "backup_mssql", "server": "/var/opt/mssql/backup",
+                   "database": "tpch_*.bak", "schema": "dbo", "table": "orders"},
+        "output": {"format": "parquet", "directory": "/export/orders"},
+    })
+    assert structured["status"] == "ok", structured
+    assert structured["auto_parallelism"] == "Physical"
+    assert "--sourceuser" not in structured["command"]
+    assert "backup files 'tpch_*.bak' in /var/opt/mssql/backup" in structured["explanation"]
+    jsonschema.validate(structured, PREVIEW_OUTPUT_SCHEMA)
+
+
+@pytest.mark.asyncio
+async def test_preview_backup_query_not_auto_physical():
+    _, handler = _handler()
+    _content, structured = await handler("fastbcp_preview_export", {
+        "source": {"type": "backup_rman", "server": "D:\\Backups\\RMAN", "database": "full_*;ctl_*",
+                   "query": "SELECT ID, NAME, CREATED FROM HRPDB.HR.EMPLOYEES"},
+        "output": {"format": "parquet", "directory": "D:\\export"},
+    })
+    assert structured["status"] == "ok", structured
+    assert "auto_parallelism" not in structured
+    assert structured["command"][structured["command"].index("--parallelmethod") + 1] == "None"
+
+
+@pytest.mark.asyncio
+async def test_preview_backup_rejects_ntile():
+    _, handler = _handler()
+    _content, structured = await handler("fastbcp_preview_export", {
+        "source": {"type": "backup_rman", "server": "/b", "database": "full_*",
+                   "schema": "SALES", "table": "ORDERS"},
+        "output": {"format": "parquet", "directory": "/o"},
+        "options": {"method": "Ntile", "distribute_key_column": "ID", "degree": 4},
+    })
+    assert structured["status"] == "error"
+    assert "Ntile method is not available with connection type backup_rman" in structured["errors"][0]["message"]
+
+
+@pytest.mark.asyncio
+async def test_preview_lowercase_method_canonical():
+    _, handler = _handler()
+    _content, structured = await handler("fastbcp_preview_export", {
+        "source": {"type": "adbc_db2", "server": "db2-host", "database": "SAMPLE",
+                   "schema": "S", "table": "T", "user": "u", "password": "p"},
+        "output": {"format": "parquet", "directory": "/o"},
+        "options": {"method": "dbpartition", "degree": 4},
+    })
+    assert structured["status"] == "ok", structured
+    assert structured["command"][structured["command"].index("--parallelmethod") + 1] == "DBPartition"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "source_type,expected",
+    [
+        ("adbc_db2", ["ArpeDb2", "50000", "DBPartition", "trusted authentication is refused"]),
+        ("backup_mssql", ["Pages", "private key", "FASTBCP_BACKUP_RESTORE_POINT"]),
+        ("backup_rman", ["Pages", "l0/*;l1/**", "No credentials"]),
+    ],
+)
+async def test_workflow_tips_for_new_types(source_type, expected):
+    _, handler = _handler()
+    content = await handler("fastbcp_info", {
+        "action": "workflow", "source_type": source_type, "output_format": "parquet",
+    })
+    text = content[0].text
+    for fragment in expected:
+        assert fragment in text, fragment
+
+
+@pytest.mark.asyncio
+async def test_formats_notes_parquet_only_types():
+    _, handler = _handler()
+    content = await handler("fastbcp_info", {"action": "formats"})
+    text = content[0].text
+    assert "backup_mssql" in text and "adbc_db2" in text
+    assert "All source databases support all output formats" not in text

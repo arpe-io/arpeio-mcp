@@ -5,12 +5,32 @@ This module provides Pydantic models and enums for validating
 all FastBCP parameters and ensuring parameter compatibility.
 """
 
+import re
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
-class SourceConnectionType(str, Enum):
+class CaseInsensitiveEnum(str, Enum):
+    """Enum whose values are matched case-insensitively.
+
+    FastBCP 1.7 accepts the values of --connectiontype, --parallelmethod,
+    --parquetcompression, --boolformat, --loglevel and --applicationintent in
+    any case and uses the canonical spelling. The MCP does the same, and always
+    emits the canonical spelling (which older FastBCP versions require).
+    """
+
+    @classmethod
+    def _missing_(cls, value):
+        if isinstance(value, str):
+            wanted = value.strip().lower()
+            for member in cls:
+                if member.value.lower() == wanted:
+                    return member
+        return None
+
+
+class SourceConnectionType(CaseInsensitiveEnum):
     """Source database connection types supported by FastBCP."""
 
     CLICKHOUSE = "clickhouse"
@@ -34,10 +54,16 @@ class SourceConnectionType(str, Enum):
     ADBC_ORACLE = "adbc_oracle"  # 1.2+, ArpeOracle
     ADBC_NETEZZA = "adbc_netezza"  # 1.3+, ArpeNetezza
     ADBC_TERADATA = "adbc_teradata"  # 1.4+, ArpeTeradata
+    ADBC_DB2 = "adbc_db2"  # 1.7+, ArpeDb2 (no native counterpart)
+    # Backup files read without restoring them (embedded ADBC drivers).
+    # Parquet output only, parallel methods None and Physical (Pages).
+    BACKUP_MSSQL = "backup_mssql"  # 1.5+, SQL Server .bak files (ArpeMSBackup)
+    BACKUP_RMAN = "backup_rman"  # 1.6+, Oracle RMAN backup sets (ArpeOraBackup)
 
 
-# Each ADBC connection type maps to the native type FastBCP rewrites it to
-# internally, so parallelism planning follows the native source.
+# Each ADBC connection type with a native counterpart maps to the native type
+# FastBCP rewrites it to internally, so parallelism planning follows the
+# native source.
 ADBC_NATIVE_TYPES = {
     "adbc_mssql": "mssql",
     "adbc_pgsql": "pgsql",
@@ -45,6 +71,24 @@ ADBC_NATIVE_TYPES = {
     "adbc_netezza": "nzsql",
     "adbc_teradata": "teradata",
 }
+
+# Every ADBC connection type, including those without a native counterpart
+ADBC_TYPES = frozenset([*ADBC_NATIVE_TYPES, "adbc_db2"])
+
+# Backup connection types: --server is the directory of the backup files and
+# --database names the files (names or patterns separated by ';').
+BACKUP_TYPES = frozenset(["backup_mssql", "backup_rman"])
+
+# Connection types that only write Parquet
+PARQUET_ONLY_TYPES = ADBC_TYPES | BACKUP_TYPES
+
+# ADBC types that refuse trusted authentication (-A): FastBCP stops with
+# "-C <type> does not support trusted (-A) authentication: give -U and -X".
+NO_TRUSTED_AUTH_TYPES = frozenset(["adbc_teradata", "adbc_db2"])
+
+# Parallel methods accepted by the backup connection types; FastBCP stops on
+# any other with "<method> method is not available with connection type ...".
+BACKUP_METHODS = ("None", "Physical")
 
 # Native connection types per Physical strategy (FastBCP 1.4+). Physical is
 # resolved from the connection type; other sources are rejected by FastBCP.
@@ -57,6 +101,37 @@ PHYSICAL_STRATEGIES = {
     "nzsql": "NZDataSlice",
     "nzcopy": "NZDataSlice",
     "nzoledb": "NZDataSlice",
+    "backup_mssql": "Pages",  # 1.5+
+    "backup_rman": "Pages",  # 1.6+
+}
+
+# Sources whose native table partitions DBPartition reads (FastBCP 1.3+;
+# adbc_db2: Db2 for LUW range partitioning, 1.7+). ADBC types follow their
+# native counterpart.
+DBPARTITION_SOURCES = frozenset(
+    ["mssql", "msoledbsql", "pgsql", "pgcopy", "oraodp", "mysql", "teradata", "adbc_db2"]
+)
+
+# --query accepted by the backup connection types (no WHERE, JOIN or other
+# clause): SELECT * | col1, col2, ... FROM [schema.]table for backup_mssql,
+# FROM [[container.]owner.]table for backup_rman.
+_IDENT = r'(?:\[[^\]]+\]|"[^"]+"|[A-Za-z_][\w$#@]*)'
+
+
+def _backup_query_re(max_qualifiers: int) -> "re.Pattern[str]":
+    return re.compile(
+        rf"^\s*SELECT\s+(?:\*|{_IDENT}(?:\s*,\s*{_IDENT})*)\s+FROM\s+"
+        rf"{_IDENT}(?:\s*\.\s*{_IDENT}){{0,{max_qualifiers}}}\s*;?\s*$",
+        re.IGNORECASE | re.DOTALL,
+    )
+
+
+BACKUP_QUERY_FORMS = {
+    "backup_mssql": (_backup_query_re(1), "SELECT * | col1, col2, ... FROM [schema.]table"),
+    "backup_rman": (
+        _backup_query_re(2),
+        "SELECT * | col1, col2, ... FROM [[container.]owner.]table",
+    ),
 }
 
 
@@ -66,7 +141,7 @@ def native_source_type(source_type: str) -> str:
     return ADBC_NATIVE_TYPES.get(source_type, source_type)
 
 
-class OutputFormat(str, Enum):
+class OutputFormat(CaseInsensitiveEnum):
     """Output file formats supported by FastBCP."""
 
     CSV = "csv"
@@ -78,7 +153,7 @@ class OutputFormat(str, Enum):
     BINARY = "binary"
 
 
-class ParallelismMethod(str, Enum):
+class ParallelismMethod(CaseInsensitiveEnum):
     """Parallelism methods for data distribution."""
 
     CTID = "Ctid"  # PostgreSQL-specific (deprecated in 1.4, use Physical)
@@ -95,7 +170,7 @@ class ParallelismMethod(str, Enum):
     PHYSICAL = "Physical"  # Physical row location, resolved per engine (1.4+)
 
 
-class StorageTarget(str, Enum):
+class StorageTarget(CaseInsensitiveEnum):
     """Storage targets for output files."""
 
     LOCAL = "local"
@@ -107,7 +182,7 @@ class StorageTarget(str, Enum):
     GCS = "gcs"
 
 
-class ParquetCompression(str, Enum):
+class ParquetCompression(CaseInsensitiveEnum):
     """Parquet compression algorithms."""
 
     NONE = "None"
@@ -119,7 +194,7 @@ class ParquetCompression(str, Enum):
     ZSTD = "Zstd"
 
 
-class LogLevel(str, Enum):
+class LogLevel(CaseInsensitiveEnum):
     """Log level for FastBCP output."""
 
     INFORMATION = "Information"
@@ -134,14 +209,14 @@ class DecimalSeparator(str, Enum):
     COMMA = ","
 
 
-class ApplicationIntent(str, Enum):
+class ApplicationIntent(CaseInsensitiveEnum):
     """SQL Server application intent."""
 
     READ_ONLY = "ReadOnly"
     READ_WRITE = "ReadWrite"
 
 
-class BoolFormat(str, Enum):
+class BoolFormat(CaseInsensitiveEnum):
     """Boolean output format."""
 
     AUTOMATIC = "automatic"
@@ -177,21 +252,59 @@ class SourceConnectionConfig(BaseModel):
         None, description="SQL Server application intent"
     )
 
+    @field_validator("type", mode="before")
+    @classmethod
+    def normalize_type(cls, v):
+        """Connection types are case-insensitive (FastBCP 1.7+); emit them in lower case."""
+        return v.strip().lower() if isinstance(v, str) else v
+
+    @model_validator(mode="after")
+    def validate_source_type_rules(self):
+        """Connection rules of the ADBC and backup connection types."""
+        source_type = self.type
+        if source_type in NO_TRUSTED_AUTH_TYPES and self.trusted_auth:
+            raise ValueError(
+                f"-C {source_type} does not support trusted (-A) authentication: "
+                f"give -U and -X (user and password)"
+            )
+        if source_type == "adbc_db2" and not self.database.strip():
+            raise ValueError(
+                "-C adbc_db2 needs the database name (-I / --sourcedatabase)"
+            )
+        if source_type in BACKUP_TYPES:
+            # No database login: trusted_auth (both types) and user / password (backup_rman) are
+            # not used, and FastBCP ignores them rather than refusing them, so they are not
+            # rejected here either.
+            if source_type == "backup_mssql" and not self.server:
+                raise ValueError(
+                    "backup_mssql needs 'server': the directory of the backup files "
+                    "(e.g. 'D:\\Backups\\MSSQL' or '/var/opt/mssql/backup')"
+                )
+            if not self.database.strip():
+                raise ValueError(
+                    f"{source_type} needs 'database': the backup file names or "
+                    f"patterns, separated by ';'"
+                )
+        return self
+
     @model_validator(mode="after")
     def validate_mutual_exclusivity(self):
         """Validate mutually exclusive connection parameters."""
-        # connect_string excludes individual connection params
+        # connect_string excludes individual connection params. With the
+        # backup types it only sets driver options, next to --server (and the
+        # key file in --user / --password for backup_mssql).
         if self.connect_string:
             conflicts = []
+            backup = self.type in BACKUP_TYPES
             if self.dsn:
                 conflicts.append("dsn")
             if self.provider:
                 conflicts.append("provider")
-            if self.server:
+            if self.server and not backup:
                 conflicts.append("server")
-            if self.user:
+            if self.user and not backup:
                 conflicts.append("user")
-            if self.password:
+            if self.password and not backup:
                 conflicts.append("password")
             if self.trusted_auth:
                 conflicts.append("trusted_auth")
@@ -227,6 +340,9 @@ class SourceConnectionConfig(BaseModel):
     @model_validator(mode="after")
     def validate_authentication(self):
         """Ensure either credentials or trusted auth is provided."""
+        # Backup files have no database login
+        if self.type in BACKUP_TYPES:
+            return self
         if not self.trusted_auth and not self.connect_string and not self.dsn:
             if not self.user:
                 raise ValueError(
@@ -368,18 +484,51 @@ class ExportRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_adbc_output_format(self):
-        """ADBC connection types only produce Parquet output."""
+        """ADBC and backup connection types only produce Parquet output."""
         source_type = self.source.type.lower()
         if (
-            source_type in ADBC_NATIVE_TYPES
+            source_type in PARQUET_ONLY_TYPES
             and self.output.format != OutputFormat.PARQUET
         ):
+            if source_type in ADBC_NATIVE_TYPES:
+                alternative = (
+                    f", or the native '{ADBC_NATIVE_TYPES[source_type]}' connection "
+                    f"type for other formats"
+                )
+            elif source_type == "adbc_db2":
+                alternative = (
+                    ", or the 'odbc' connection type with IBM's Db2 ODBC driver "
+                    "for other formats"
+                )
+            else:
+                alternative = ""
             raise ValueError(
                 f"Connection type '{source_type}' only supports parquet output, "
-                f"not '{self.output.format.value}'. Use format 'parquet', or the "
-                f"native '{ADBC_NATIVE_TYPES[source_type]}' connection type for "
-                f"other formats."
+                f"not '{self.output.format.value}'. Use format 'parquet'"
+                f"{alternative}."
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_backup_source(self):
+        """Backup files: methods None or Physical, restricted --query."""
+        source_type = self.source.type.lower()
+        if source_type not in BACKUP_TYPES:
+            return self
+        method = self.options.method.value
+        if method not in BACKUP_METHODS:
+            raise ValueError(
+                f"{method} method is not available with connection type "
+                f"{source_type} ==> use method None or Physical (resolved to Pages)"
+            )
+        if self.source.query:
+            pattern, form = BACKUP_QUERY_FORMS[source_type]
+            if not pattern.match(self.source.query):
+                raise ValueError(
+                    f"With {source_type}, 'query' is limited to {form} "
+                    f"(no WHERE, JOIN or other clause); give 'schema' and 'table' "
+                    f"to export the whole table"
+                )
         return self
 
     @model_validator(mode="after")
@@ -418,18 +567,11 @@ class ExportRequest(BaseModel):
 
         # DBPartition reads the native partitions of a table
         if method == ParallelismMethod.DB_PARTITION:
-            if source_type not in [
-                "mssql",
-                "msoledbsql",
-                "pgsql",
-                "pgcopy",
-                "oraodp",
-                "mysql",
-                "teradata",
-            ]:
+            if source_type not in DBPARTITION_SOURCES:
                 raise ValueError(
                     f"Method 'DBPartition' only works with SQL Server, PostgreSQL, "
-                    f"Oracle, MySQL and Teradata sources, not '{self.source.type}'"
+                    f"Oracle, MySQL, Teradata and Db2 (adbc_db2) sources, not "
+                    f"'{self.source.type}'"
                 )
             if not self.source.schema or not self.source.table:
                 raise ValueError(
@@ -449,7 +591,7 @@ class ExportRequest(BaseModel):
             )
 
         # Physical resolves to Ctid / Rowid / Physloc / NZDataSlice from the
-        # connection type (FastBCP 1.4+)
+        # connection type (FastBCP 1.4+), and to Pages for backup files (1.5+)
         if method == ParallelismMethod.PHYSICAL:
             if source_type not in PHYSICAL_STRATEGIES:
                 hint = (
@@ -459,8 +601,9 @@ class ExportRequest(BaseModel):
                     else ""
                 )
                 raise ValueError(
-                    f"Method 'Physical' only works with PostgreSQL, Oracle, SQL Server "
-                    f"and Netezza sources, not '{self.source.type}'.{hint}"
+                    f"Method 'Physical' only works with PostgreSQL, Oracle, SQL Server, "
+                    f"Netezza, SQL Server backup and Oracle RMAN backup sources, not "
+                    f"'{self.source.type}'.{hint}"
                 )
 
         # Since FastBCP 1.4, Physical, Physloc and Rowid need schema + table
