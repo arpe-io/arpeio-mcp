@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.11] - 2026-11-16
+
+### Added
+
+- **FastBCP 1.5, 1.6 and 1.7 support** (registry entries `1.5.0.0`, `1.6.0.0`, `1.6.6.0`, `1.6.8.0` and `1.7.0.0`):
+  - New `adbc_db2` connection type (1.7+), read through the embedded ArpeDb2 ADBC driver, no IBM client needed. `server` is `host[:port]` (port 50000 by default), `database` is required, user/password or `connect_string`; trusted authentication is refused with FastBCP's message. Parquet only. Parallel methods `None`, `Random`, `DataDriven`, `RangeId`, `Ntile`, `Timepartition` and `DBPartition` (range-partitioned Db2 for LUW tables); `Physical` is rejected. Workflow tip like the `adbc_teradata` one.
+  - New `backup_mssql` connection type (1.5+): tables read straight from SQL Server `.bak` files, without restoring them. `server` is the backup directory, `database` the file names or patterns separated by `;`; no login, except the certificate's private key file in `user` (and its password) for encrypted or TDE backups (1.6.6+). A `connect_string` (driver options) can go with them.
+  - New `backup_rman` connection type (1.6+): tables read straight from Oracle RMAN backup sets. `server` is the directory of the pieces, `database` their names or patterns separated by `;` (paths and `**` since 1.6.8, for incremental chains); no credentials.
+  - Both backup types write Parquet only, accept only the `None` and `Physical` methods (`Physical` resolves to Pages and needs `schema` and `table`), and limit `query` to `SELECT * | col1, col2, ... FROM [schema.]table` (`[[container.]owner.]table` for `backup_rman`), as FastBCP does. Parallelism suggestions recommend `Physical` for them. Workflow tips cover the file naming, the key file and the `FASTBCP_BACKUP_RESTORE_POINT`, `FASTBCP_BACKUP_RESTORE_MODE` and `FASTBCP_INDEX_DIR` variables.
+  - Version-compatibility warnings when `backup_mssql`, `backup_rman` or `adbc_db2` is used against an older binary, when a `backup_mssql` key file is given to a pre-1.6.6 binary, and when a `backup_rman` `database` uses paths or `**` on a pre-1.6.8 binary.
+  - FastBCP 1.5, 1.6 and 1.7 docs added to doc search; 1.7 is now the version served at `/latest/` (1.6 at `/1.6/`, 1.4 at `/1.4/`).
+
+### Changed
+
+- Connection types, parallel methods, output formats, Parquet compressions, bool formats, log levels and application intents are matched case-insensitively by the validators, like FastBCP 1.7, and always emitted in their canonical spelling (which older FastBCP versions require). The tool input schemas still list the canonical spellings.
+- `adbc_teradata` with trusted authentication is now rejected, with FastBCP's message.
+- **ArpeDb2** backs the FastBCP `adbc_db2` connection type (FastBCP 1.7+): `adbc_info`, the ADBC capabilities resource and the server instructions name it.
+- Server instructions: `DBPartition` covers Db2 for LUW, `Physical` resolves to Pages on backups, and a new section describes the backup connection types. `fastbcp_info` formats lists the backup types and says which types write Parquet only.
+
 ## [0.3.10] - 2026-11-13
 
 ### Added
