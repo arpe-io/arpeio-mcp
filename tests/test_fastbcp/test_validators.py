@@ -25,9 +25,22 @@ from src.fastbcp.validators import (
 class TestSourceConnectionType:
     """Tests for SourceConnectionType enum."""
 
-    def test_all_19_source_types(self):
-        """Test that there are exactly 19 source types (14 native + 5 ADBC)."""
-        assert len(SourceConnectionType) == 19
+    def test_all_22_source_types(self):
+        """22 source types: 14 native, 6 ADBC, 2 backup (FastBCP 1.7)."""
+        assert len(SourceConnectionType) == 22
+
+    def test_new_1_5_to_1_7_types_exist(self):
+        assert SourceConnectionType("adbc_db2") == SourceConnectionType.ADBC_DB2
+        assert SourceConnectionType("backup_mssql") == SourceConnectionType.BACKUP_MSSQL
+        assert SourceConnectionType("backup_rman") == SourceConnectionType.BACKUP_RMAN
+
+    def test_hanaexport_not_listed(self):
+        """hanaexport was removed in FastBCP 1.7 (refused by the CLI long before)."""
+        assert "hanaexport" not in [t.value for t in SourceConnectionType]
+
+    def test_case_insensitive_lookup(self):
+        assert SourceConnectionType("ADBC_DB2") == SourceConnectionType.ADBC_DB2
+        assert SourceConnectionType("Backup_MSSQL") == SourceConnectionType.BACKUP_MSSQL
 
     def test_adbc_types_exist(self):
         """Test that the FastBCP 1.x ADBC source types exist."""
@@ -938,3 +951,242 @@ class TestAdbcTeradata:
     @pytest.mark.parametrize("method,key", [("Ntile", "o_orderkey"), ("DBPartition", None)])
     def test_teradata_methods_allowed(self, method, key):
         assert self._request(method=method, key=key).options.method.value == method
+
+
+def _export(source, fmt="parquet", options=None):
+    return ExportRequest(
+        source=source,
+        output={"format": fmt, "directory": "/tmp/out"},
+        options=options or {},
+    )
+
+
+class TestAdbcDb2:
+    """adbc_db2 (FastBCP 1.7+) reads IBM Db2 through ArpeDb2."""
+
+    SOURCE = {"type": "adbc_db2", "server": "db2-host:50000", "database": "SAMPLE",
+              "schema": "DB2INST1", "table": "ORDERS", "user": "db2inst1", "password": "p"}
+
+    def test_parquet_ok(self):
+        assert _export(self.SOURCE).source.type == "adbc_db2"
+
+    def test_server_without_port_ok(self):
+        assert _export({**self.SOURCE, "server": "db2-host"}).source.server == "db2-host"
+
+    @pytest.mark.parametrize("fmt", ["csv", "json", "xlsx"])
+    def test_non_parquet_rejected(self, fmt):
+        with pytest.raises(ValidationError, match="only supports parquet"):
+            _export(self.SOURCE, fmt=fmt)
+
+    def test_trusted_auth_refused_with_fastbcp_message(self):
+        source = {**self.SOURCE, "trusted_auth": True}
+        del source["user"], source["password"]
+        with pytest.raises(ValidationError, match=r"-C adbc_db2 does not support trusted \(-A\) authentication: give -U and -X"):
+            _export(source)
+
+    def test_database_required(self):
+        with pytest.raises(ValidationError, match="needs the database name"):
+            _export({**self.SOURCE, "database": " "})
+
+    def test_user_required(self):
+        source = dict(self.SOURCE)
+        del source["user"], source["password"]
+        with pytest.raises(ValidationError):
+            _export(source)
+
+    def test_connect_string_ok(self):
+        source = {"type": "adbc_db2", "database": "SAMPLE", "schema": "S", "table": "T",
+                  "connect_string": "Server=db2-host;Port=50001;Database=SAMPLE;User Id=u;Password=p;SSL Mode=verify-full"}
+        assert _export(source).source.connect_string.startswith("Server=")
+
+    @pytest.mark.parametrize(
+        "method,key",
+        [("None", None), ("Random", "ID"), ("DataDriven", "REGION"), ("RangeId", "ID"),
+         ("Ntile", "ID"), ("Timepartition", "ORDER_DATE"), ("DBPartition", None)],
+    )
+    def test_documented_methods_allowed(self, method, key):
+        options = {"method": method, "degree": 4}
+        if key:
+            options["distribute_key_column"] = key
+        assert _export(self.SOURCE, options=options).options.method.value == method
+
+    @pytest.mark.parametrize("method", ["Physical", "Ctid", "Rowid", "Physloc", "NZDataSlice"])
+    def test_physical_methods_rejected(self, method):
+        with pytest.raises(ValidationError, match=method):
+            _export(self.SOURCE, options={"method": method})
+
+
+class TestAdbcTeradataTrusted:
+    def test_trusted_auth_refused(self):
+        with pytest.raises(ValidationError, match="-C adbc_teradata does not support trusted"):
+            _export({"type": "adbc_teradata", "server": "td-host", "database": "TPCH",
+                     "schema": "TPCH", "table": "ORDERS", "trusted_auth": True})
+
+
+class TestBackupSources:
+    """backup_mssql (FastBCP 1.5+) and backup_rman (1.6+) read backup files."""
+
+    MSSQL = {"type": "backup_mssql", "server": "/var/opt/mssql/backup",
+             "database": "sales_full.bak;sales_diff.bak", "schema": "dbo", "table": "orders"}
+    RMAN = {"type": "backup_rman", "server": "/backup/rman/orcl", "database": "l0/*;l1/**",
+            "schema": "SALES", "table": "ORDERS"}
+
+    @pytest.mark.parametrize("source", [MSSQL, RMAN])
+    def test_no_credentials_needed(self, source):
+        request = _export(source, options={"method": "Physical", "degree": 8})
+        assert request.options.method == ParallelismMethod.PHYSICAL
+        assert request.source.user is None
+
+    @pytest.mark.parametrize("source", [MSSQL, RMAN])
+    def test_none_method_ok(self, source):
+        assert _export(source).options.method == ParallelismMethod.NONE
+
+    @pytest.mark.parametrize("source", [MSSQL, RMAN])
+    @pytest.mark.parametrize(
+        "method,key",
+        [("Ntile", "id"), ("RangeId", "id"), ("Random", "id"), ("DataDriven", "id"),
+         ("Timepartition", "d"), ("DBPartition", None), ("Physloc", None), ("Rowid", None),
+         ("Ctid", None)],
+    )
+    def test_other_methods_rejected(self, source, method, key):
+        options = {"method": method}
+        if key:
+            options["distribute_key_column"] = key
+        with pytest.raises(ValidationError, match=f"{method} method is not available with connection type {source['type']}"):
+            _export(source, options=options)
+
+    @pytest.mark.parametrize("source", [MSSQL, RMAN])
+    @pytest.mark.parametrize("fmt", ["csv", "tsv", "json", "bson", "xlsx", "binary"])
+    def test_parquet_only(self, source, fmt):
+        with pytest.raises(ValidationError, match="only supports parquet"):
+            _export(source, fmt=fmt)
+
+    @pytest.mark.parametrize("source", [MSSQL, RMAN])
+    def test_physical_needs_schema_and_table(self, source):
+        query_source = {**source, "query": "SELECT * FROM t"}
+        del query_source["table"], query_source["schema"]
+        with pytest.raises(ValidationError, match="schema"):
+            _export(query_source, options={"method": "Physical"})
+
+    @pytest.mark.parametrize("source", [MSSQL, RMAN])
+    def test_trusted_auth_rejected(self, source):
+        with pytest.raises(ValidationError, match="trusted_auth is not used"):
+            _export({**source, "trusted_auth": True})
+
+    def test_encrypted_backup_key_file(self):
+        source = {**self.MSSQL, "user": "/secure/keys/MyCert.pvk", "password": "KeyPassword"}
+        assert _export(source).source.user == "/secure/keys/MyCert.pvk"
+
+    def test_rman_credentials_rejected(self):
+        with pytest.raises(ValidationError, match="backup_rman takes no credentials"):
+            _export({**self.RMAN, "user": "scott", "password": "tiger"})
+
+    def test_mssql_server_directory_required(self):
+        source = dict(self.MSSQL)
+        del source["server"]
+        with pytest.raises(ValidationError, match="directory of the backup files"):
+            _export(source)
+
+    def test_connect_string_with_server_and_key(self):
+        source = {**self.MSSQL, "user": "/k.pvk", "connect_string": "adbc.arpemsbackup.geospatial=native"}
+        request = _export(source)
+        assert request.source.server and request.source.connect_string
+
+    def test_connect_string_still_excludes_server_for_live_sources(self):
+        with pytest.raises(ValidationError, match="connect_string cannot be used with: server"):
+            _export({"type": "mssql", "server": "h", "database": "d", "table": "t",
+                     "connect_string": "Server=h"})
+
+    @pytest.mark.parametrize(
+        "source_type,query",
+        [
+            ("backup_mssql", "SELECT * FROM dbo.orders"),
+            ("backup_mssql", "select o_orderkey, o_custkey from [dbo].[orders];"),
+            ("backup_mssql", "SELECT * FROM orders"),
+            ("backup_rman", "SELECT ID, NAME, CREATED FROM HRPDB.HR.EMPLOYEES"),
+            ("backup_rman", "SELECT * FROM SALES.ORDERS"),
+        ],
+    )
+    def test_documented_query_forms(self, source_type, query):
+        base = self.MSSQL if source_type == "backup_mssql" else self.RMAN
+        source = {**base, "query": query}
+        del source["table"], source["schema"]
+        assert _export(source).source.query == query
+
+    @pytest.mark.parametrize(
+        "source_type,query",
+        [
+            ("backup_mssql", "SELECT * FROM dbo.orders WHERE o_orderkey > 10"),
+            ("backup_mssql", "SELECT a.x FROM a JOIN b ON a.id = b.id"),
+            ("backup_mssql", "SELECT * FROM db.dbo.orders"),
+            ("backup_rman", "SELECT COUNT(*) FROM SALES.ORDERS"),
+            ("backup_rman", "SELECT * FROM A.B.C.D"),
+        ],
+    )
+    def test_other_queries_rejected(self, source_type, query):
+        base = self.MSSQL if source_type == "backup_mssql" else self.RMAN
+        source = {**base, "query": query}
+        del source["table"], source["schema"]
+        with pytest.raises(ValidationError, match="'query' is limited to"):
+            _export(source)
+
+
+class TestDBPartitionAndPhysicalTables:
+    """The support tables follow the FastBCP 1.7 parallel_parameters page."""
+
+    def test_dbpartition_on_adbc_db2(self):
+        source = {**TestAdbcDb2.SOURCE}
+        assert _export(source, options={"method": "DBPartition"}).options.method.value == "DBPartition"
+
+    @pytest.mark.parametrize("source_type", ["backup_mssql", "backup_rman", "adbc_netezza", "nzsql"])
+    def test_dbpartition_rejected(self, source_type):
+        source = {"type": source_type, "server": "/x", "database": "d", "schema": "s", "table": "t"}
+        if not source_type.startswith("backup"):
+            source.update(user="u", password="p")
+        with pytest.raises(ValidationError, match="DBPartition"):
+            _export(source, options={"method": "DBPartition"})
+
+    @pytest.mark.parametrize("source_type", ["adbc_db2", "adbc_teradata", "teradata", "odbc", "mysql"])
+    def test_physical_rejected(self, source_type):
+        source = {"type": source_type, "server": "h", "database": "d", "schema": "s",
+                  "table": "t", "user": "u", "password": "p"}
+        with pytest.raises(ValidationError, match="Physical"):
+            _export(source, options={"method": "Physical"})
+
+    def test_physical_strategies_table(self):
+        from src.fastbcp.validators import PHYSICAL_STRATEGIES
+        assert PHYSICAL_STRATEGIES["backup_mssql"] == "Pages"
+        assert PHYSICAL_STRATEGIES["backup_rman"] == "Pages"
+        assert "adbc_db2" not in PHYSICAL_STRATEGIES
+
+
+class TestCaseInsensitiveValues:
+    """FastBCP 1.7 values are case-insensitive; the MCP normalizes them."""
+
+    def test_export_request_normalized(self):
+        request = ExportRequest(
+            source={"type": "MSSQL", "server": "h", "database": "d", "schema": "dbo",
+                    "table": "t", "user": "u", "password": "p", "application_intent": "readonly"},
+            output={"format": "PARQUET", "directory": "/o", "parquet_compression": "ZSTD"},
+            options={"method": "physical", "degree": 4, "log_level": "DEBUG"},
+        )
+        assert request.source.type == "mssql"
+        assert request.source.application_intent == ApplicationIntent.READ_ONLY
+        assert request.output.format == OutputFormat.PARQUET
+        assert request.output.parquet_compression == ParquetCompression.ZSTD
+        assert request.options.method == ParallelismMethod.PHYSICAL
+        assert request.options.log_level == LogLevel.DEBUG
+
+    def test_bool_format_and_methods(self):
+        assert OutputConfig(format="csv", directory="/o", bool_format="TRUE/FALSE").bool_format == BoolFormat.TRUE_FALSE
+        assert ExportOptions(method="dbpartition").method == ParallelismMethod.DB_PARTITION
+        assert ExportOptions(method="NONE").method == ParallelismMethod.NONE
+
+    def test_unknown_value_still_rejected(self):
+        with pytest.raises(ValidationError):
+            ExportOptions(method="physycal")
+
+    def test_backup_type_rules_apply_whatever_the_case(self):
+        with pytest.raises(ValidationError, match="only supports parquet"):
+            _export({"type": "Backup_MSSQL", "server": "/b", "database": "x.bak",
+                     "schema": "dbo", "table": "t"}, fmt="csv")

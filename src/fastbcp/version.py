@@ -5,7 +5,7 @@ This module contains the version registry mapping FastBCP versions
 to their known capabilities, plus a compatibility check function.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, FrozenSet, Optional
 
 
@@ -22,6 +22,11 @@ class VersionCapabilities:
     supports_cloud_profile: bool = False
     supports_merge: bool = False
     supports_config_file: bool = False
+    # backup_mssql reads encrypted / TDE backups with the certificate's private
+    # key given in --sourceuser / --sourcepassword (1.6.6+)
+    supports_backup_encryption: bool = False
+    # backup_rman --database takes paths and the ** pattern (1.6.8+)
+    supports_backup_rman_paths: bool = False
 
 
 # First FastBCP release accepting each ADBC connection type
@@ -31,7 +36,17 @@ ADBC_MIN_VERSIONS: Dict[str, str] = {
     "adbc_oracle": "1.2.0.0",
     "adbc_netezza": "1.3.0.0",
     "adbc_teradata": "1.4.0.0",
+    "adbc_db2": "1.7.0.0",
 }
+
+# First FastBCP release accepting each backup connection type
+BACKUP_MIN_VERSIONS: Dict[str, str] = {
+    "backup_mssql": "1.5.0.0",
+    "backup_rman": "1.6.0.0",
+}
+
+# Every connection type added after 0.29, with the first release accepting it
+SOURCE_TYPE_MIN_VERSIONS: Dict[str, str] = {**ADBC_MIN_VERSIONS, **BACKUP_MIN_VERSIONS}
 
 # Engine-specific methods replaced by Physical in FastBCP 1.4 (removed in 2.0)
 DEPRECATED_PHYSICAL_METHODS = frozenset(["Ctid", "Rowid", "Physloc", "NZDataSlice"])
@@ -606,6 +621,29 @@ VERSION_REGISTRY: Dict[str, VersionCapabilities] = {
 }
 
 
+def _extends(base: VersionCapabilities, new_sources=(), **flags) -> VersionCapabilities:
+    """Capabilities of a release that adds connection types or features to ``base``."""
+    return replace(base, source_types=base.source_types | frozenset(new_sources), **flags)
+
+
+# 1.5: SQL Server backup files (backup_mssql, ArpeMSBackup). Parquet only,
+# parallel methods None and Physical (resolved to Pages).
+VERSION_REGISTRY["1.5.0.0"] = _extends(VERSION_REGISTRY["1.4.0.0"], ["backup_mssql"])
+# 1.6.0: Oracle RMAN backup sets (backup_rman, ArpeOraBackup), same rules.
+VERSION_REGISTRY["1.6.0.0"] = _extends(VERSION_REGISTRY["1.5.0.0"], ["backup_rman"])
+# 1.6.6: encrypted and TDE SQL Server backups (private key in --sourceuser).
+VERSION_REGISTRY["1.6.6.0"] = _extends(
+    VERSION_REGISTRY["1.6.0.0"], supports_backup_encryption=True
+)
+# 1.6.8: incremental RMAN backups; backup_rman --database takes paths and **.
+VERSION_REGISTRY["1.6.8.0"] = _extends(
+    VERSION_REGISTRY["1.6.6.0"], supports_backup_rman_paths=True
+)
+# 1.7: IBM Db2 (adbc_db2, ArpeDb2); enumerated values case-insensitive;
+# hanaexport removed (refused by --connectiontype long before).
+VERSION_REGISTRY["1.7.0.0"] = _extends(VERSION_REGISTRY["1.6.8.0"], ["adbc_db2"])
+
+
 def check_version_compatibility(
     params: dict,
     capabilities: VersionCapabilities,
@@ -624,15 +662,34 @@ def check_version_compatibility(
     warnings: list[str] = []
     ver_str = str(detected_version) if detected_version else "unknown"
 
-    # ADBC connection types were added one per release
-    source_type = ((params.get("source") or {}).get("type") or "").lower()
-    if source_type in ADBC_MIN_VERSIONS and source_type not in capabilities.source_types:
+    # ADBC and backup connection types were added one per release
+    source = params.get("source") or {}
+    source_type = (source.get("type") or "").strip().lower()
+    if (
+        source_type in SOURCE_TYPE_MIN_VERSIONS
+        and source_type not in capabilities.source_types
+    ):
         warnings.append(
             f"Connection type '{source_type}' requires FastBCP "
-            f"{ADBC_MIN_VERSIONS[source_type]}+, but detected version is {ver_str}"
+            f"{SOURCE_TYPE_MIN_VERSIONS[source_type]}+, but detected version is {ver_str}"
         )
+    elif source_type == "backup_mssql" and source.get("user"):
+        if not capabilities.supports_backup_encryption:
+            warnings.append(
+                f"Encrypted SQL Server backups (private key file in --sourceuser) "
+                f"require FastBCP 1.6.6.0+, but detected version is {ver_str}"
+            )
+    elif source_type == "backup_rman" and _is_rman_path_pattern(source.get("database")):
+        if not capabilities.supports_backup_rman_paths:
+            warnings.append(
+                f"backup_rman --database with paths or the '**' pattern requires "
+                f"FastBCP 1.6.8.0+ (incremental RMAN backups), but detected version "
+                f"is {ver_str}: give file names or patterns of the --server directory"
+            )
 
-    method = (params.get("options") or {}).get("method")
+    # Enumerated values are case-insensitive since FastBCP 1.7; the MCP
+    # normalizes them to the canonical spelling, so compare the same way here.
+    method = _canonical_method((params.get("options") or {}).get("method"))
     if method == "DBPartition" and method not in capabilities.parallelism_methods:
         warnings.append(
             f"Parallel method 'DBPartition' requires FastBCP 1.3.0.0+, "
@@ -655,3 +712,25 @@ def check_version_compatibility(
         )
 
     return warnings
+
+
+def _canonical_method(method) -> Optional[str]:
+    """Return the canonical spelling of a parallel method name (case-insensitive)."""
+    if not isinstance(method, str):
+        return method
+    for known in _ALL_METHODS:
+        if known.lower() == method.strip().lower():
+            return known
+    return method
+
+
+def _is_rman_path_pattern(database) -> bool:
+    """Whether a backup_rman --database uses paths or ** (FastBCP 1.6.8+)."""
+    if not isinstance(database, str):
+        return False
+    return any(sep in database for sep in ("/", "\\", "**"))
+
+
+_ALL_METHODS = sorted(
+    {m for caps in VERSION_REGISTRY.values() for m in caps.parallelism_methods}
+)

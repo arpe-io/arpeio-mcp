@@ -26,6 +26,7 @@ from .validators import (
     DecimalSeparator,
     ApplicationIntent,
     BoolFormat,
+    BACKUP_TYPES,
 )
 from src.base.error_patterns import diagnose_cli_error
 from src.base.structured import make_output_schema, respond
@@ -94,7 +95,16 @@ def _build_export_explanation(request: ExportRequest) -> str:
     parts = []
 
     # Source
-    if request.source.query:
+    if request.source.type in BACKUP_TYPES:
+        what = (
+            "query" if request.source.query
+            else f"table {request.source.schema + '.' if request.source.schema else ''}{request.source.table}"
+        )
+        parts.append(
+            f"Read {what} from {request.source.type} backup files "
+            f"'{request.source.database}' in {request.source.server or '(no directory)'}"
+        )
+    elif request.source.query:
         server_info = (
             f" ({request.source.server}/{request.source.database})"
             if request.source.server
@@ -182,15 +192,15 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             "type": {
                                 "type": "string",
                                 "enum": [e.value for e in SourceConnectionType],
-                                "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL). ADBC types 'adbc_mssql' (1.0+), 'adbc_pgsql' (1.1+), 'adbc_oracle' (1.2+), 'adbc_netezza' (1.3+) and 'adbc_teradata' (1.4+) read the same databases through the Arpe ADBC drivers (ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza, ArpeTeradata) and write parquet output only.",
+                                "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL). ADBC types 'adbc_mssql' (1.0+), 'adbc_pgsql' (1.1+), 'adbc_oracle' (1.2+), 'adbc_netezza' (1.3+), 'adbc_teradata' (1.4+) and 'adbc_db2' (1.7+, IBM Db2, no IBM client needed) read through the Arpe ADBC drivers (ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza, ArpeTeradata, ArpeDb2) and write parquet output only. 'backup_mssql' (1.5+, SQL Server .bak files: full, differential, encrypted) and 'backup_rman' (1.6+, Oracle RMAN backup sets: full, incremental from 1.6.8) read backups without restoring them: parquet only, method None or Physical.",
                             },
                             "server": {
                                 "type": "string",
-                                "description": "Server address (e.g., 'localhost:5432', 'myserver\\\\SQLEXPRESS', 'dbhost:1521')",
+                                "description": "Server address (e.g., 'localhost:5432', 'myserver\\\\SQLEXPRESS', 'dbhost:1521'; adbc_db2: 'host[:port]', port 50000 by default). For backup_mssql / backup_rman: the directory of the backup files.",
                             },
                             "database": {
                                 "type": "string",
-                                "description": "Database name",
+                                "description": "Database name (required by adbc_db2). For backup_mssql: the backup file names or patterns in the server directory, separated by ';' (e.g. 'sales_full.bak;sales_diff.bak', 'tpch_*.bak'). For backup_rman: the backup piece names, paths or patterns, separated by ';' ('full_*'; FastBCP 1.6.8+: 'l0/*;l1/**', '**').",
                             },
                             "schema": {
                                 "type": "string",
@@ -202,13 +212,13 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             },
                             "query": {
                                 "type": "string",
-                                "description": "SQL query (alternative to table)",
+                                "description": "SQL query (alternative to table). backup_mssql: only 'SELECT * | col1, col2, ... FROM [schema.]table'; backup_rman: only 'SELECT * | col1, col2, ... FROM [[container.]owner.]table'.",
                             },
-                            "user": {"type": "string", "description": "Username"},
-                            "password": {"type": "string", "description": "Password"},
+                            "user": {"type": "string", "description": "Username. backup_mssql (FastBCP 1.6.6+): the private key file of the certificate of an encrypted or TDE backup. Not used by backup_rman."},
+                            "password": {"type": "string", "description": "Password. backup_mssql: the password of the private key file. Not used by backup_rman."},
                             "trusted_auth": {
                                 "type": "boolean",
-                                "description": "Use trusted authentication",
+                                "description": "Use trusted authentication. Refused by adbc_teradata and adbc_db2; not used by backup_mssql / backup_rman.",
                                 "default": False,
                             },
                             "connect_string": {
@@ -302,7 +312,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                             "method": {
                                 "type": "string",
                                 "enum": [e.value for e in ParallelismMethod],
-                                "description": "Parallelism method. Ntile: even distribution on numeric key. DataDriven: distinct value partitions, works with any data type. Physical: split on the physical row location, no key needed; resolved to Ctid (PostgreSQL), Rowid (Oracle), Physloc (SQL Server) or NZDataSlice (Netezza) from the connection type; needs schema and table (FastBCP 1.4+). Physloc, Ctid, Rowid, NZDataSlice: the engine-specific names, deprecated since 1.4 (removed in 2.0), still needed on FastBCP < 1.4. RangeId: numeric min/max range. Random: modulo-based approximate distribution (avoid in production). Timepartition: partition by time column (FastBCP 0.30+). DBPartition: one chunk per native table partition, for SQL Server, PostgreSQL, Oracle, MySQL and Teradata; needs schema and table, no key (FastBCP 1.3+). None: single-threaded. Call `fastbcp_info` with action='parallelism' if unsure.",
+                                "description": "Parallelism method. Ntile: even distribution on numeric key. DataDriven: distinct value partitions, works with any data type. Physical: split on the physical row location, no key needed; resolved to Ctid (PostgreSQL), Rowid (Oracle), Physloc (SQL Server), NZDataSlice (Netezza) or Pages (backup_mssql, backup_rman) from the connection type; needs schema and table (FastBCP 1.4+); not available on Teradata or Db2. Physloc, Ctid, Rowid, NZDataSlice: the engine-specific names, deprecated since 1.4 (removed in 2.0), still needed on FastBCP < 1.4. RangeId: numeric min/max range. Random: modulo-based approximate distribution (avoid in production). Timepartition: partition by time column (FastBCP 0.30+). DBPartition: one chunk per native table partition, for SQL Server, PostgreSQL, Oracle, MySQL, Teradata and Db2 for LUW (adbc_db2, range partitioning); needs schema and table, no key (FastBCP 1.3+). None: single-threaded. backup_mssql / backup_rman accept only None and Physical. Call `fastbcp_info` with action='parallelism' if unsure.",
                                 "default": "None",
                             },
                             "distribute_key_column": {
@@ -487,7 +497,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             suggested_method = None
             options = arguments.get("options") or {}
             method = options.get("method", "None")
-            if method == "None" and options.get("degree", 1) == 1:
+            if str(method).strip().lower() == "none" and options.get("degree", 1) == 1:
                 source_type = (arguments.get("source") or {}).get("type", "")
                 if source_type:
                     suggestion = suggest_parallelism_method(
@@ -760,9 +770,12 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             connection = request.connection
             issues = []
 
+            backup = connection.type in BACKUP_TYPES
+
             # Check for required fields based on connection type
             if (
-                not connection.trusted_auth
+                not backup
+                and not connection.trusted_auth
                 and not connection.connect_string
                 and not connection.dsn
             ):
@@ -771,9 +784,12 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                         "- Username is required (unless using trusted authentication, connect_string, or dsn)"
                     )
 
-            # Check server format (only if server is provided)
+            # Check server format (only if server is provided). Backup types
+            # take a directory; adbc_db2 defaults to port 50000.
             if (
                 connection.server
+                and not backup
+                and connection.type != "adbc_db2"
                 and ":" not in connection.server
                 and "\\" not in connection.server
             ):
@@ -793,7 +809,12 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 ]
             else:
                 auth_method = "Trusted"
-                if connection.connect_string:
+                if backup:
+                    auth_method = (
+                        "Private key file (encrypted backup)" if connection.user
+                        else "None (backup files)"
+                    )
+                elif connection.connect_string:
                     auth_method = "Connection String"
                 elif connection.dsn:
                     auth_method = "DSN"
@@ -864,7 +885,9 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
         response.extend(
             [
                 "## Notes:",
-                "- All source databases support all output formats",
+                "- ADBC (adbc_*) and backup (backup_mssql, backup_rman) connection types write parquet only; the other sources support all output formats",
+                "- backup_mssql / backup_rman: `server` is the backup directory, `database` the backup files; methods None or Physical only",
+                "- Connection types, parallel methods and the other enumerated values are case-insensitive since FastBCP 1.7; the MCP always emits the canonical spelling, which older versions require",
                 "- Parallelism method availability depends on source database type",
                 "- Cloud storage targets require a cloud_profile configuration",
             ]
@@ -1053,6 +1076,42 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "- User/password only: trusted authentication is refused\n"
                 "- Default logon uses TLS on port 443, no Teradata client needed; the legacy port 1025 "
                 "(no TLS, or `SSL Mode=disable`) needs Teradata Tools and Utilities (Linux: `FASTBCP_TTU_PATH`)"
+            ),
+            "adbc_db2": (
+                "- **ArpeDb2 ADBC driver** (FastBCP 1.7+): parquet output only, no IBM client software needed\n"
+                "- Targets Db2 for LUW; Db2 for i works for queries; Db2 for z/OS is not supported yet\n"
+                "- `server` is `host[:port]` (port 50000 by default); `database` (the Db2 database name) is required\n"
+                "- User/password only: trusted authentication is refused. TLS is off by default: give the SSL port "
+                "and `SSL Mode=verify-full;SSL Root Cert=...` in `connect_string`\n"
+                "- **Recommended parallelism**: `DBPartition` on a range-partitioned table (Db2 for LUW; falls back "
+                "to `None` on Db2 for i or a table that is not range partitioned), else `Ntile` or `RangeId` on a key. "
+                "Physical is not supported"
+            ),
+            "backup_mssql": (
+                "- **SQL Server backup files** (FastBCP 1.5+, ArpeMSBackup): read `.bak` files without restoring them, "
+                "no SQL Server needed; parquet output only\n"
+                "- `server` is the directory of the backups; `database` names the files: a name, a pattern "
+                "(`tpch_*.bak`) or a `;`-separated list, striped sets and a full backup with its differentials "
+                "(1.6.7+) included\n"
+                "- No login: encrypted or TDE backups (1.6.6+) take the certificate's private key file in `user` "
+                "and its password in `password`\n"
+                "- **Parallelism**: `Physical` (resolves to Pages; needs schema and table) or `None`; no other method\n"
+                "- `query` is limited to `SELECT * | col1, col2, ... FROM [schema.]table`\n"
+                "- `FASTBCP_BACKUP_RESTORE_POINT=full` reads the last full backup only, "
+                "`FASTBCP_BACKUP_RESTORE_MODE=best_effort` skips a backup that cannot be used (1.6.7+); "
+                "`FASTBCP_INDEX_DIR` for an account without a usable home"
+            ),
+            "backup_rman": (
+                "- **Oracle RMAN backup sets** (FastBCP 1.6+, ArpeOraBackup): no Oracle, no restore; parquet output only\n"
+                "- `server` is the directory of the backup pieces; `database` names the pieces, separated by `;` "
+                "(`full_*`); since 1.6.8, paths and `**` too (`l0/*;l1/**`, `**`) for incremental chains\n"
+                "- No credentials: `user`, `password` and trusted authentication are not used; encrypted backup "
+                "sets are refused\n"
+                "- **Parallelism**: `Physical` (resolves to Pages; needs schema and table) or `None`; no other method\n"
+                "- `query` is limited to `SELECT * | col1, col2, ... FROM [[container.]owner.]table`\n"
+                "- `FASTBCP_BACKUP_RESTORE_POINT=full` reads the level 0 only, "
+                "`FASTBCP_BACKUP_RESTORE_MODE=best_effort` skips a backup that cannot be used (1.6.8+); "
+                "`FASTBCP_INDEX_DIR` for an account without a usable home"
             ),
         }
 

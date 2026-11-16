@@ -133,6 +133,8 @@ ADBC_DRIVERS: Dict[str, AdbcDriver] = {
         authentication="User / password (encrypted logon negotiated), Kerberos, token as password over verified TLS",
         uri_example="db2://db2inst1:<pw>@db2.example.com:50001/sample?sslmode=verify-full",
         docs_slug="arpedb2",
+        fastbcp_type="adbc_db2",
+        fastbcp_min_version="1.7",
     ),
 }
 

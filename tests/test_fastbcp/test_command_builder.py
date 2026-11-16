@@ -951,3 +951,102 @@ def test_physical_command_has_no_key_column(command_builder):
     command = command_builder.build_command(request)
     assert command[command.index("--method") + 1] == "Physical"
     assert "--distributekeycolumn" not in command
+
+
+def _flag(command, flag):
+    return command[command.index(flag) + 1]
+
+
+class TestFastBCP17Commands:
+    """adbc_db2 (1.7), backup_mssql (1.5) and backup_rman (1.6) commands."""
+
+    def test_adbc_db2_command(self, command_builder):
+        request = ExportRequest(
+            source={"type": "adbc_db2", "server": "db2-host:50000", "database": "SAMPLE",
+                    "schema": "DB2INST1", "table": "ORDERS", "user": "db2inst1", "password": "pw"},
+            output={"format": "parquet", "directory": "/data/export"},
+            options={"method": "DBPartition", "degree": 4},
+        )
+        command = command_builder.build_command(request)
+        assert _flag(command, "--sourceconnectiontype") == "adbc_db2"
+        assert _flag(command, "--sourceserver") == "db2-host:50000"
+        assert _flag(command, "--sourcedatabase") == "SAMPLE"
+        assert _flag(command, "--method") == "DBPartition"
+        assert "--sourcetrusted" not in command
+
+    def test_backup_mssql_encrypted_command(self, command_builder):
+        request = ExportRequest(
+            source={"type": "backup_mssql", "server": "/var/opt/mssql/backup",
+                    "database": "sales_encrypted.bak", "user": "/secure/keys/MyCert.pvk",
+                    "password": "KeyPassword", "schema": "dbo", "table": "orders",
+                    "connect_string": "adbc.arpemsbackup.geospatial=native"},
+            output={"format": "parquet", "directory": "/export/orders"},
+            options={"method": "Physical", "degree": 8},
+        )
+        command = command_builder.build_command(request)
+        assert _flag(command, "--sourceconnectiontype") == "backup_mssql"
+        assert _flag(command, "--sourceserver") == "/var/opt/mssql/backup"
+        assert _flag(command, "--sourcedatabase") == "sales_encrypted.bak"
+        assert _flag(command, "--sourceuser") == "/secure/keys/MyCert.pvk"
+        assert _flag(command, "--sourcepassword") == "KeyPassword"
+        assert _flag(command, "--sourceconnectstring") == "adbc.arpemsbackup.geospatial=native"
+        assert _flag(command, "--method") == "Physical"
+        assert "--distributekeycolumn" not in command
+        display = command_builder.format_command_display(command, mask=True)
+        assert "KeyPassword" not in display
+
+    def test_backup_rman_command(self, command_builder):
+        request = ExportRequest(
+            source={"type": "backup_rman", "server": "/backup/rman/orcl", "database": "l0/*;l1/**",
+                    "schema": "SALES", "table": "ORDERS"},
+            output={"format": "parquet", "directory": "/export/orders"},
+            options={"method": "Physical", "degree": 8},
+        )
+        command = command_builder.build_command(request)
+        assert _flag(command, "--sourceconnectiontype") == "backup_rman"
+        assert _flag(command, "--sourcedatabase") == "l0/*;l1/**"
+        assert "--sourceuser" not in command and "--sourcepassword" not in command
+
+    def test_canonical_spelling_emitted(self, command_builder):
+        request = ExportRequest(
+            source={"type": "PGSQL", "server": "h:5432", "database": "d", "schema": "public",
+                    "table": "t", "user": "u", "password": "p"},
+            output={"format": "PARQUET", "directory": "/o", "parquet_compression": "zstd"},
+            options={"method": "physical", "degree": 2, "log_level": "debug"},
+        )
+        command = command_builder.build_command(request)
+        assert _flag(command, "--sourceconnectiontype") == "pgsql"
+        assert _flag(command, "--method") == "Physical"
+        assert _flag(command, "--parquetcompression") == "Zstd"
+        assert _flag(command, "--loglevel") == "Debug"
+        assert _flag(command, "--fileoutput") == "output.parquet"
+
+    def test_formats_list_backups_and_db2(self):
+        sources = get_supported_formats()["Database Sources"]
+        adbc = next(k for k in sources if k.startswith("ADBC"))
+        assert "adbc_db2 1.7+" in adbc
+        backups = [k for k in sources if "backup_" in k]
+        assert len(backups) == 2
+        assert all(sources[k] == ["parquet"] for k in backups)
+        assert not any("hanaexport" in k for k in sources)
+
+    @pytest.mark.parametrize("source_type", ["backup_mssql", "backup_rman"])
+    @pytest.mark.parametrize("has_key", [True, False])
+    def test_backup_suggestion_is_physical(self, source_type, has_key):
+        result = suggest_parallelism_method(source_type, has_key, has_key, "large")
+        assert result["method"] == "Physical"
+        assert "Pages" in result["explanation"]
+
+    def test_backup_small_table_suggestion_is_none(self):
+        assert suggest_parallelism_method("backup_mssql", False, False, "small")["method"] == "None"
+
+    def test_db2_suggestion_not_physical(self):
+        assert suggest_parallelism_method("adbc_db2", False, False, "large")["method"] != "Physical"
+        assert suggest_parallelism_method("adbc_db2", True, True, "large")["method"] == "RangeId"
+
+    def test_version_capabilities_report_new_flags(self, command_builder):
+        from src.fastbcp.version import VERSION_REGISTRY
+        caps = command_builder._get_version_capabilities(VERSION_REGISTRY["1.7.0.0"])
+        assert "adbc_db2" in caps["source_types"] and "backup_rman" in caps["source_types"]
+        assert caps["supports_backup_encryption"] is True
+        assert caps["supports_backup_rman_paths"] is True

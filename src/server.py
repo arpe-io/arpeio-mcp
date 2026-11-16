@@ -608,7 +608,7 @@ async def handle_arpe_quick_start(arguments: dict) -> list[TextContent]:
         "fastbcp": {
             "name": "FastBCP",
             "purpose": "High-performance parallel database export to files and cloud storage",
-            "when": "Export a database table or query result to CSV, Parquet, JSON, TSV, BSON, XLSX, or binary files",
+            "when": "Export a database table or query result to CSV, Parquet, JSON, TSV, BSON, XLSX, or binary files, or a table straight from a SQL Server .bak backup or an Oracle RMAN backup set (Parquet)",
             "warning": None,
             "params": "source (type, server, database, table/query, credentials), output (format, path/directory), options (method, degree)",
             "steps": [
@@ -671,7 +671,8 @@ async def handle_arpe_quick_start(arguments: dict) -> list[TextContent]:
     # Keyword-based tool detection
     _TOOL_KEYWORDS = {
         "fastbcp": ["export", "dump", "extract", "file", "csv", "parquet", "json", "tsv",
-                     "bson", "xlsx", "binary", "output file", "to file", "to disk"],
+                     "bson", "xlsx", "binary", "output file", "to file", "to disk",
+                     "backup", ".bak", "rman"],
         "fasttransfer": ["transfer", "replicate", "copy data", "database to database",
                          "db to db", "etl", "load data", "insert into"],
         "lakexpress": ["lake", "lakehouse", "snowflake", "databricks", "fabric",

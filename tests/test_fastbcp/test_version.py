@@ -225,7 +225,7 @@ class TestVersionDetector:
         caps = detector.capabilities
 
         # Should get the latest known capabilities
-        assert caps == VERSION_REGISTRY["1.4.0.0"]
+        assert caps == VERSION_REGISTRY["1.7.0.0"]
 
     @patch("src.base.version_detector.subprocess.run")
     def test_capabilities_patch_version_resolves_to_minor(self, mock_run):
@@ -260,7 +260,7 @@ class TestVersionDetector:
         caps = detector.capabilities
 
         # Should fall back to latest known
-        assert caps == VERSION_REGISTRY["1.4.0.0"]
+        assert caps == VERSION_REGISTRY["1.7.0.0"]
 
     def test_registry_0291_source_completeness(self):
         """Test that 0.29.1.0 registry has all expected source types."""
@@ -371,6 +371,9 @@ class TestAdbcVersionGating:
             ("1.2.0.0", {"adbc_mssql", "adbc_pgsql", "adbc_oracle"}),
             ("1.3.0.0", {"adbc_mssql", "adbc_pgsql", "adbc_oracle", "adbc_netezza"}),
             ("1.4.0.0", {"adbc_mssql", "adbc_pgsql", "adbc_oracle", "adbc_netezza", "adbc_teradata"}),
+            ("1.6.8.0", {"adbc_mssql", "adbc_pgsql", "adbc_oracle", "adbc_netezza", "adbc_teradata"}),
+            ("1.7.0.0", {"adbc_mssql", "adbc_pgsql", "adbc_oracle", "adbc_netezza", "adbc_teradata",
+                         "adbc_db2"}),
         ],
     )
     def test_registry_adbc_types(self, version, expected):
@@ -476,6 +479,164 @@ class TestAdbcVersionGating:
         )
         assert warnings == []
 
-    def test_latest_registry_entry_is_1_4(self):
+    def test_latest_registry_entry_is_1_7(self):
         latest = max(VERSION_REGISTRY, key=lambda v: tuple(int(x) for x in v.split(".")))
-        assert latest == "1.4.0.0"
+        assert latest == "1.7.0.0"
+
+
+def _ver(version: str) -> ToolVersion:
+    return ToolVersion.parse(version)
+
+
+class TestFastBCP15To17:
+    """FastBCP 1.5 (backup_mssql), 1.6 (backup_rman) and 1.7 (adbc_db2)."""
+
+    @pytest.mark.parametrize(
+        "version,backups",
+        [
+            ("1.4.0.0", set()),
+            ("1.5.0.0", {"backup_mssql"}),
+            ("1.6.0.0", {"backup_mssql", "backup_rman"}),
+            ("1.7.0.0", {"backup_mssql", "backup_rman"}),
+        ],
+    )
+    def test_registry_backup_types(self, version, backups):
+        caps = VERSION_REGISTRY[version]
+        assert {t for t in caps.source_types if t.startswith("backup_")} == backups
+
+    def test_1_7_keeps_every_earlier_type_and_method(self):
+        assert VERSION_REGISTRY["1.4.0.0"].source_types < VERSION_REGISTRY["1.7.0.0"].source_types
+        assert (
+            VERSION_REGISTRY["1.4.0.0"].parallelism_methods
+            == VERSION_REGISTRY["1.7.0.0"].parallelism_methods
+        )
+        assert "hanaexport" not in VERSION_REGISTRY["1.7.0.0"].source_types
+        assert "hana" in VERSION_REGISTRY["1.7.0.0"].source_types
+
+    @pytest.mark.parametrize(
+        "version,encryption,rman_paths",
+        [
+            ("1.5.0.0", False, False),
+            ("1.6.0.0", False, False),
+            ("1.6.6.0", True, False),
+            ("1.6.8.0", True, True),
+            ("1.7.0.0", True, True),
+        ],
+    )
+    def test_patch_feature_flags(self, version, encryption, rman_paths):
+        caps = VERSION_REGISTRY[version]
+        assert caps.supports_backup_encryption is encryption
+        assert caps.supports_backup_rman_paths is rman_paths
+
+    @pytest.mark.parametrize(
+        "source_type,registry_version,detected,minimum",
+        [
+            ("backup_mssql", "1.4.0.0", "1.4.2.0", "1.5.0.0+"),
+            ("backup_rman", "1.5.0.0", "1.5.1.0", "1.6.0.0+"),
+            ("adbc_db2", "1.6.8.0", "1.6.8.0", "1.7.0.0+"),
+        ],
+    )
+    def test_new_type_on_older_binary_warns(self, source_type, registry_version, detected, minimum):
+        warnings = check_version_compatibility(
+            {"source": {"type": source_type}}, VERSION_REGISTRY[registry_version], _ver(detected)
+        )
+        assert len(warnings) == 1
+        assert source_type in warnings[0] and minimum in warnings[0] and detected in warnings[0]
+
+    @pytest.mark.parametrize("source_type", ["backup_mssql", "backup_rman", "adbc_db2"])
+    def test_new_types_on_1_7_no_warning(self, source_type):
+        warnings = check_version_compatibility(
+            {"source": {"type": source_type}, "options": {"method": "None"}},
+            VERSION_REGISTRY["1.7.0.0"],
+            _ver("1.7.0.0"),
+        )
+        assert warnings == []
+
+    def test_source_type_case_insensitive(self):
+        warnings = check_version_compatibility(
+            {"source": {"type": "ADBC_DB2"}}, VERSION_REGISTRY["1.6.8.0"], _ver("1.6.8.0")
+        )
+        assert warnings and "adbc_db2" in warnings[0]
+
+    def test_encrypted_backup_before_1_6_6_warns(self):
+        params = {"source": {"type": "backup_mssql", "user": "/keys/MyCert.pvk"}}
+        warnings = check_version_compatibility(params, VERSION_REGISTRY["1.6.0.0"], _ver("1.6.5.0"))
+        assert len(warnings) == 1 and "1.6.6.0+" in warnings[0]
+        assert check_version_compatibility(
+            params, VERSION_REGISTRY["1.6.6.0"], _ver("1.6.6.0")
+        ) == []
+
+    def test_plain_backup_mssql_on_1_5_no_warning(self):
+        warnings = check_version_compatibility(
+            {"source": {"type": "backup_mssql", "database": "tpch_*.bak"}},
+            VERSION_REGISTRY["1.5.0.0"],
+            _ver("1.5.1.0"),
+        )
+        assert warnings == []
+
+    @pytest.mark.parametrize("database", ["l0/*;l1/**", "**", "l0\\*", "/backup/l0/*"])
+    def test_rman_paths_before_1_6_8_warn(self, database):
+        params = {"source": {"type": "backup_rman", "database": database}}
+        warnings = check_version_compatibility(params, VERSION_REGISTRY["1.6.6.0"], _ver("1.6.7.0"))
+        assert len(warnings) == 1 and "1.6.8.0+" in warnings[0]
+        assert check_version_compatibility(
+            params, VERSION_REGISTRY["1.6.8.0"], _ver("1.6.8.0")
+        ) == []
+
+    def test_rman_plain_pattern_on_1_6_0_no_warning(self):
+        warnings = check_version_compatibility(
+            {"source": {"type": "backup_rman", "database": "full_*;ctl_*"}},
+            VERSION_REGISTRY["1.6.0.0"],
+            _ver("1.6.0.0"),
+        )
+        assert warnings == []
+
+    @pytest.mark.parametrize(
+        "version,expected",
+        [("1.6.0.0", "1.6.0.0"), ("1.6.5.0", "1.6.0.0"), ("1.6.7.0", "1.6.6.0"),
+         ("1.6.9.0", "1.6.8.0"), ("1.7.2.0", "1.7.0.0")],
+    )
+    @patch("src.base.version_detector.subprocess.run")
+    def test_patch_versions_resolve(self, mock_run, version, expected):
+        mock_result = Mock()
+        mock_result.stdout = f"FastBCP Version {version}\n"
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+        detector = VersionDetector(
+            "/fake/binary",
+            VERSION_REGISTRY,
+            r"FastBCP\s+Version\s+(\d+\.\d+\.\d+\.\d+)",
+            "FastBCP",
+        )
+        detector.detect()
+        assert detector.capabilities == VERSION_REGISTRY[expected]
+
+    def test_existing_method_checks_on_1_7(self):
+        caps = VERSION_REGISTRY["1.7.0.0"]
+        assert check_version_compatibility(
+            {"source": {"type": "adbc_db2"}, "options": {"method": "DBPartition"}}, caps, _ver("1.7.0.0")
+        ) == []
+        assert check_version_compatibility(
+            {"source": {"type": "backup_rman"}, "options": {"method": "Physical"}}, caps, _ver("1.7.0.0")
+        ) == []
+        deprecated = check_version_compatibility(
+            {"source": {"type": "pgsql"}, "options": {"method": "Ctid"}}, caps, _ver("1.7.0.0")
+        )
+        assert len(deprecated) == 1 and "deprecated" in deprecated[0]
+
+    @pytest.mark.parametrize("method", ["physical", "PHYSICAL", "dbpartition"])
+    def test_method_case_insensitive(self, method):
+        warnings = check_version_compatibility(
+            {"source": {"type": "pgsql"}, "options": {"method": method}},
+            VERSION_REGISTRY["1.2.0.0"],
+            _ver("1.2.0.0"),
+        )
+        assert len(warnings) == 1
+
+    def test_engine_method_case_insensitive_deprecation(self):
+        warnings = check_version_compatibility(
+            {"source": {"type": "pgsql"}, "options": {"method": "ctid"}},
+            VERSION_REGISTRY["1.7.0.0"],
+            _ver("1.7.0.0"),
+        )
+        assert len(warnings) == 1 and "'Ctid' is deprecated" in warnings[0]
