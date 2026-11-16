@@ -163,9 +163,9 @@ class TestCommandBuilder:
         assert "/tmp/users.csv" in command
 
         # Check options. FastBCP has no --loadmode flag.
-        assert "--method" in command
+        assert "--parallelmethod" in command
         assert "Ctid" in command
-        assert "--degree" in command
+        assert "--paralleldegree" in command
         assert "4" in command
         assert "--loadmode" not in command
 
@@ -914,7 +914,7 @@ class TestAdbcCommands:
 
 
 def test_dbpartition_command_has_no_key_column(command_builder):
-    """DBPartition emits --method DBPartition and no --distributekeycolumn."""
+    """DBPartition emits --parallelmethod DBPartition and no --distributekeycolumn."""
     request = ExportRequest(
         source={
             "type": "mssql",
@@ -929,12 +929,12 @@ def test_dbpartition_command_has_no_key_column(command_builder):
         options={"method": "DBPartition", "degree": 8},
     )
     command = command_builder.build_command(request)
-    assert command[command.index("--method") + 1] == "DBPartition"
+    assert command[command.index("--parallelmethod") + 1] == "DBPartition"
     assert "--distributekeycolumn" not in command
 
 
 def test_physical_command_has_no_key_column(command_builder):
-    """Physical emits --method Physical and no --distributekeycolumn."""
+    """Physical emits --parallelmethod Physical and no --distributekeycolumn."""
     request = ExportRequest(
         source={
             "type": "adbc_pgsql",
@@ -949,7 +949,7 @@ def test_physical_command_has_no_key_column(command_builder):
         options={"method": "Physical", "degree": 8},
     )
     command = command_builder.build_command(request)
-    assert command[command.index("--method") + 1] == "Physical"
+    assert command[command.index("--parallelmethod") + 1] == "Physical"
     assert "--distributekeycolumn" not in command
 
 
@@ -971,7 +971,7 @@ class TestFastBCP17Commands:
         assert _flag(command, "--sourceconnectiontype") == "adbc_db2"
         assert _flag(command, "--sourceserver") == "db2-host:50000"
         assert _flag(command, "--sourcedatabase") == "SAMPLE"
-        assert _flag(command, "--method") == "DBPartition"
+        assert _flag(command, "--parallelmethod") == "DBPartition"
         assert "--sourcetrusted" not in command
 
     def test_backup_mssql_encrypted_command(self, command_builder):
@@ -990,7 +990,7 @@ class TestFastBCP17Commands:
         assert _flag(command, "--sourceuser") == "/secure/keys/MyCert.pvk"
         assert _flag(command, "--sourcepassword") == "KeyPassword"
         assert _flag(command, "--sourceconnectstring") == "adbc.arpemsbackup.geospatial=native"
-        assert _flag(command, "--method") == "Physical"
+        assert _flag(command, "--parallelmethod") == "Physical"
         assert "--distributekeycolumn" not in command
         display = command_builder.format_command_display(command, mask=True)
         assert "KeyPassword" not in display
@@ -1016,7 +1016,7 @@ class TestFastBCP17Commands:
         )
         command = command_builder.build_command(request)
         assert _flag(command, "--sourceconnectiontype") == "pgsql"
-        assert _flag(command, "--method") == "Physical"
+        assert _flag(command, "--parallelmethod") == "Physical"
         assert _flag(command, "--parquetcompression") == "Zstd"
         assert _flag(command, "--loglevel") == "Debug"
         assert _flag(command, "--fileoutput") == "output.parquet"

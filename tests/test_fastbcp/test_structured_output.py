@@ -99,7 +99,7 @@ async def test_preview_backup_query_not_auto_physical():
     })
     assert structured["status"] == "ok", structured
     assert "auto_parallelism" not in structured
-    assert structured["command"][structured["command"].index("--method") + 1] == "None"
+    assert structured["command"][structured["command"].index("--parallelmethod") + 1] == "None"
 
 
 @pytest.mark.asyncio
@@ -125,7 +125,7 @@ async def test_preview_lowercase_method_canonical():
         "options": {"method": "dbpartition", "degree": 4},
     })
     assert structured["status"] == "ok", structured
-    assert structured["command"][structured["command"].index("--method") + 1] == "DBPartition"
+    assert structured["command"][structured["command"].index("--parallelmethod") + 1] == "DBPartition"
 
 
 @pytest.mark.asyncio

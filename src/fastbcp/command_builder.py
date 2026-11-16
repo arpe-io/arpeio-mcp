@@ -217,7 +217,7 @@ class CommandBuilder(BaseCommandBuilder):
         params = []
 
         # Parallelism method
-        params.extend(["--method", options.method.value])
+        params.extend(["--parallelmethod", options.method.value])
 
         # Distribute key column
         if options.distribute_key_column:
@@ -233,7 +233,7 @@ class CommandBuilder(BaseCommandBuilder):
                 )
 
         # Degree of parallelism
-        params.extend(["--degree", str(options.degree)])
+        params.extend(["--paralleldegree", str(options.degree)])
 
         # Note: FastBCP (unlike FastTransfer) has no --loadmode, --batchsize or
         # --mapmethod flags. They are intentionally not emitted here.

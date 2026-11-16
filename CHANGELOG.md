@@ -14,6 +14,7 @@
 
 ### Changed
 
+- FastBCP commands are built with `--parallelmethod` and `--paralleldegree`, the names the FastBCP docs use, instead of their aliases `--method` and `--degree` (accepted by every supported FastBCP version).
 - Connection types, parallel methods, output formats, Parquet compressions, bool formats, log levels and application intents are matched case-insensitively by the validators, like FastBCP 1.7, and always emitted in their canonical spelling (which older FastBCP versions require). The tool input schemas still list the canonical spellings.
 - `adbc_teradata` with trusted authentication is now rejected, with FastBCP's message.
 - **ArpeDb2** backs the FastBCP `adbc_db2` connection type (FastBCP 1.7+): `adbc_info`, the ADBC capabilities resource and the server instructions name it.
