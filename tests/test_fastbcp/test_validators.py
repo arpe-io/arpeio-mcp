@@ -1069,17 +1069,17 @@ class TestBackupSources:
             _export(query_source, options={"method": "Physical"})
 
     @pytest.mark.parametrize("source", [MSSQL, RMAN])
-    def test_trusted_auth_rejected(self, source):
-        with pytest.raises(ValidationError, match="trusted_auth is not used"):
-            _export({**source, "trusted_auth": True})
+    def test_trusted_auth_not_rejected(self, source):
+        # not used with backups, but FastBCP ignores it rather than refusing it
+        assert _export({**source, "trusted_auth": True}).source.trusted_auth is True
 
     def test_encrypted_backup_key_file(self):
         source = {**self.MSSQL, "user": "/secure/keys/MyCert.pvk", "password": "KeyPassword"}
         assert _export(source).source.user == "/secure/keys/MyCert.pvk"
 
-    def test_rman_credentials_rejected(self):
-        with pytest.raises(ValidationError, match="backup_rman takes no credentials"):
-            _export({**self.RMAN, "user": "scott", "password": "tiger"})
+    def test_rman_credentials_not_rejected(self):
+        # not used by backup_rman, but FastBCP ignores them rather than refusing them
+        assert _export({**self.RMAN, "user": "scott", "password": "tiger"}).source.user == "scott"
 
     def test_mssql_server_directory_required(self):
         source = dict(self.MSSQL)

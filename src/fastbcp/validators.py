@@ -272,16 +272,9 @@ class SourceConnectionConfig(BaseModel):
                 "-C adbc_db2 needs the database name (-I / --sourcedatabase)"
             )
         if source_type in BACKUP_TYPES:
-            if self.trusted_auth:
-                raise ValueError(
-                    f"{source_type} reads backup files and has no database login: "
-                    f"trusted_auth is not used"
-                )
-            if source_type == "backup_rman" and (self.user or self.password):
-                raise ValueError(
-                    "backup_rman takes no credentials: user and password are not used "
-                    "(encrypted RMAN backup sets are not supported)"
-                )
+            # No database login: trusted_auth (both types) and user / password (backup_rman) are
+            # not used, and FastBCP ignores them rather than refusing them, so they are not
+            # rejected here either.
             if source_type == "backup_mssql" and not self.server:
                 raise ValueError(
                     "backup_mssql needs 'server': the directory of the backup files "
