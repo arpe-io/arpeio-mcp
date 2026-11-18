@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.13] - 2026-11-18
+
+### Changed
+
+- **MigratorXpress doc search has a `0.8` doc version**: a detected 0.8.x binary (or no binary) is now matched to `0.8` instead of falling back to `0.7`. The docs site has no page set per series for 0.7 and 0.8 (`/0.7/` and `/0.8/` return 404, `/latest/` documents both), so the two doc versions are crawled from `/latest/`. A 0.7.x binary keeps `0.7`, a 0.6.x binary keeps `0.6` at `/0.6/`. The docs cache is keyed by doc version: the first search after the upgrade crawls the MigratorXpress pages again.
+
+### Fixed
+
+- **MigratorXpress intro page missing from doc search**: the docs sitemap lists the root page of a version without a trailing slash (`/latest`), and the crawl kept only the URLs starting with `/latest/`. The page is now crawled, so `search_docs` finds its overview and `arpe_release_notes` returns its "What's new in 0.7" section again. A docs cache written by an earlier version is replaced when it expires (7 days).
+- **No MigratorXpress docs with a 0.6.x binary**: the docs sitemap no longer lists the `/0.6/` pages, so nothing was indexed. When the sitemap lists no page of the selected doc version, the crawler now starts at the root page of that version and follows the links that stay under it (19 pages for 0.6).
+
 ## [0.3.12] - 2026-11-18
 
 ### Added

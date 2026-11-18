@@ -9,7 +9,7 @@ import logging
 import re
 import warnings
 from typing import List, Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urldefrag, urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 # Timeout for individual HTTP requests
 REQUEST_TIMEOUT = 30.0
+
+# Upper bound on the pages fetched when a doc version is discovered by
+# following links (see crawl_linked_pages)
+MAX_LINKED_PAGES = 200
 
 
 def _slugify(text: str) -> str:
@@ -191,6 +195,75 @@ async def fetch_and_chunk(url: str, source_name: str, client: httpx.AsyncClient)
         return []
 
 
+def _in_scope(url: str, url_prefix: str) -> bool:
+    """Tell whether a URL belongs to the doc version served under url_prefix.
+
+    The root page of a version is listed with or without its trailing slash
+    ('.../latest' in the migratorxpress-docs.arpe.io sitemap), so the prefix
+    without its slash matches too, as an exact URL only ('/0.6' must not match
+    '/0.60/...').
+    """
+    return url.startswith(url_prefix) or url == url_prefix.rstrip("/")
+
+
+async def crawl_linked_pages(
+    url_prefix: str,
+    source_name: str,
+    client: httpx.AsyncClient,
+    max_pages: int = MAX_LINKED_PAGES,
+) -> List[dict]:
+    """Crawl one doc version by following links, for a version the sitemap omits.
+
+    Starts at the version's root page and follows, breadth first, the links
+    that stay on the same host and under url_prefix. Each page is fetched once:
+    the same response gives its chunks and its links.
+
+    Args:
+        url_prefix: Root URL of the version, with a trailing slash.
+        source_name: Product name (e.g., 'migratorxpress').
+        client: httpx async client.
+        max_pages: Upper bound on the pages fetched.
+
+    Returns:
+        List of all chunks from the pages found.
+    """
+    root = url_prefix.rstrip("/")
+    host = urlparse(root).netloc
+    queue = [root]
+    seen = {root}
+    all_chunks: List[dict] = []
+    pages = 0
+
+    while queue and pages < max_pages:
+        url = queue.pop(0)
+        try:
+            resp = await client.get(url, timeout=REQUEST_TIMEOUT, follow_redirects=True)
+            resp.raise_for_status()
+        except (httpx.HTTPError, Exception) as e:
+            logger.warning(f"Failed to fetch {url}: {e}")
+            continue
+        pages += 1
+        all_chunks.extend(chunk_html(resp.text, url, source_name))
+
+        for a in BeautifulSoup(resp.text, "html.parser").find_all("a", href=True):
+            parsed = urlparse(urldefrag(urljoin(url, a["href"]))[0])
+            if parsed.scheme not in ("http", "https") or parsed.netloc != host:
+                continue
+            link = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
+            if link not in seen and _in_scope(link, url_prefix):
+                seen.add(link)
+                queue.append(link)
+
+    if queue:
+        logger.warning(f"Stopped following links under {url_prefix} after {max_pages} pages")
+    if not pages:
+        logger.warning(f"No pages found for {source_name} under {url_prefix}")
+        return []
+
+    logger.info(f"Crawled {source_name} by links: {pages} pages, {len(all_chunks)} chunks")
+    return all_chunks
+
+
 async def crawl_doc_site(
     sitemap_url: str,
     source_name: str,
@@ -203,18 +276,25 @@ async def crawl_doc_site(
         sitemap_url: URL to the sitemap page.
         source_name: Product name (e.g., 'fastbcp').
         client: httpx async client.
-        url_prefix: When set, only the sitemap URLs starting with it are
-            crawled (one version of a site whose sitemap lists every version).
+        url_prefix: When set, only the sitemap URLs under it are crawled (one
+            version of a site whose sitemap covers several). When the sitemap
+            lists none, the version is crawled by following links instead.
 
     Returns:
         List of all chunks from the site.
     """
     page_urls = await crawl_sitemap_page(sitemap_url, client)
     if url_prefix:
-        page_urls = [u for u in page_urls if u.startswith(url_prefix)]
+        page_urls = [u for u in page_urls if _in_scope(u, url_prefix)]
+        if not page_urls:
+            # The sitemap does not list this version (migratorxpress-docs.arpe.io
+            # lists the /latest/ pages only): follow the links from its root page.
+            logger.info(
+                f"No URLs for {source_name} under {url_prefix} in {sitemap_url}: following links"
+            )
+            return await crawl_linked_pages(url_prefix, source_name, client)
     if not page_urls:
-        scope = f" under {url_prefix}" if url_prefix else ""
-        logger.warning(f"No URLs found for {source_name} at {sitemap_url}{scope}")
+        logger.warning(f"No URLs found for {source_name} at {sitemap_url}")
         return []
 
     all_chunks = []

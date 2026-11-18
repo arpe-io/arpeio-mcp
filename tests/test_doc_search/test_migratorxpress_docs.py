@@ -10,7 +10,7 @@ from rank_bm25 import BM25Okapi
 import src.doc_search.index as index_module
 from src.base.release_notes_handler import build_release_notes_tool
 from src.doc_search.cache import best_version_for
-from src.doc_search.crawler import crawl_doc_site
+from src.doc_search.crawler import crawl_doc_site, crawl_linked_pages
 from src.doc_search.doc_versions import (
     DOC_URL_SCOPES,
     DOC_URL_VERSION_ALIASES,
@@ -31,7 +31,7 @@ def _scope_for(version: str) -> str:
 
 class TestVersionMapping:
     def test_doc_versions_are_minor_releases(self):
-        assert MIGRATORXPRESS_DOC_VERSIONS == ["0.6", "0.7"]
+        assert MIGRATORXPRESS_DOC_VERSIONS == ["0.6", "0.7", "0.8"]
 
     def test_root_sitemap(self):
         assert DOC_URLS["migratorxpress"] == f"{SITE}/sitemap.xml"
@@ -45,19 +45,23 @@ class TestVersionMapping:
     @pytest.mark.parametrize(
         "detected,expected",
         [
-            ("0.8.2", "0.7"),  # 0.8 is documented at /latest/, like 0.7
+            ("0.9.0", "0.8"),  # newer than any known series: the latest one
+            ("0.8.2", "0.8"),
+            ("0.8.0", "0.8"),
             ("0.7.3", "0.7"),
             ("0.7.0.0", "0.7"),
             ("0.6.34", "0.6"),
             ("0.6.27", "0.6"),
-            (None, "0.7"),
+            (None, "0.8"),
         ],
     )
     def test_detected_version_maps_to_doc_version(self, detected, expected):
         assert best_version_for("migratorxpress", detected, MIGRATORXPRESS_DOC_VERSIONS) == expected
 
-    def test_07_served_at_latest(self):
-        assert _scope_for("0.7") == f"{SITE}/latest/"
+    @pytest.mark.parametrize("version", ["0.7", "0.8"])
+    def test_07_and_08_served_at_latest(self, version):
+        """The site has no /0.7/ or /0.8/ path: /latest/ documents both series."""
+        assert _scope_for(version) == f"{SITE}/latest/"
 
     def test_06_keeps_versioned_path(self):
         assert _scope_for("0.6") == f"{SITE}/0.6/"
@@ -68,8 +72,9 @@ SITEMAP_XML = f"""<?xml version="1.0" encoding="UTF-8"?>
 <url><loc>{SITE}/</loc></url>
 <url><loc>{SITE}/0.6/</loc></url>
 <url><loc>{SITE}/0.6/compatibility</loc></url>
-<url><loc>{SITE}/latest/</loc></url>
+<url><loc>{SITE}/latest</loc></url>
 <url><loc>{SITE}/latest/reference/cli-reference</loc></url>
+<url><loc>{SITE}/latest-news</loc></url>
 </urlset>"""
 
 
@@ -91,13 +96,16 @@ def _mock_client(fetched: list) -> httpx.AsyncClient:
 
 class TestCrawlScope:
     @pytest.mark.asyncio
-    async def test_latest_scope_crawls_only_07_pages(self):
+    @pytest.mark.parametrize("version", ["0.7", "0.8"])
+    async def test_latest_scope_crawls_only_latest_pages(self, version):
         fetched: list = []
         async with _mock_client(fetched) as client:
             chunks = await crawl_doc_site(
-                DOC_URLS["migratorxpress"], "migratorxpress", client, _scope_for("0.7"))
+                DOC_URLS["migratorxpress"], "migratorxpress", client, _scope_for(version))
         pages = fetched[1:]
-        assert pages == [f"{SITE}/latest/", f"{SITE}/latest/reference/cli-reference"]
+        # The root page is listed as .../latest, without the trailing slash of
+        # the scope: it holds the "What's new" section and must be crawled.
+        assert pages == [f"{SITE}/latest", f"{SITE}/latest/reference/cli-reference"]
         assert {c["url"] for c in chunks} == set(pages)
 
     @pytest.mark.asyncio
@@ -113,7 +121,121 @@ class TestCrawlScope:
         fetched: list = []
         async with _mock_client(fetched) as client:
             await crawl_doc_site(DOC_URLS["migratorxpress"], "migratorxpress", client)
-        assert len(fetched) == 6  # sitemap + 5 pages
+        assert len(fetched) == 7  # sitemap + 6 pages
+
+
+# The live sitemap lists the /latest pages only: the 0.6 pages exist but have to
+# be found by following links from the 0.6 root page.
+LATEST_ONLY_SITEMAP_XML = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<url><loc>{SITE}/latest</loc></url>
+<url><loc>{SITE}/latest/reference/cli-reference</loc></url>
+</urlset>"""
+
+
+def _linked_page(title: str, links: list) -> str:
+    anchors = "".join(f'<a href="{href}">link</a>' for href in links)
+    return (f"<html><body><nav>{anchors}</nav><article><h1>{title}</h1><h2>Section</h2>"
+            f"<p>Content of the {title} page, long enough to keep.</p></article></body></html>")
+
+
+LINKED_06_PAGES = {
+    f"{SITE}/0.6": _linked_page("MigratorXpress 0.6", [
+        "/0.6", "/0.6/", "/0.6#architecture", "/0.6/compatibility", "/0.6/reference/cli-reference/",
+        "/latest", "/latest/compatibility", "/0.60/other", "https://arpe.io/", "mailto:someone@example.com",
+    ]),
+    f"{SITE}/0.6/compatibility": _linked_page("Compatibility", [
+        "/0.6", "/0.6/reference/cli-reference?x=1", "/0.6/compatibility#oracle",
+    ]),
+    f"{SITE}/0.6/reference/cli-reference": _linked_page("CLI reference", [
+        "/0.6/reference/logging", "logging", "/0.6/missing", f"{SITE}/0.6/compatibility",
+    ]),
+    f"{SITE}/0.6/reference/logging": _linked_page("Logging", ["/0.6"]),
+}
+
+
+def _mock_linked_client(fetched: list, pages: dict = LINKED_06_PAGES) -> httpx.AsyncClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        fetched.append(url)
+        if url == f"{SITE}/sitemap.xml":
+            return httpx.Response(
+                200, text=LATEST_ONLY_SITEMAP_XML, headers={"content-type": "application/xml"})
+        if url in pages:
+            return httpx.Response(200, text=pages[url], headers={"content-type": "text/html"})
+        return httpx.Response(404, text="Not found")
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+class TestLinkedPagesFallback:
+    """A doc version the sitemap does not list is crawled by following links."""
+
+    @pytest.mark.asyncio
+    async def test_06_found_by_following_links(self):
+        fetched: list = []
+        async with _mock_linked_client(fetched) as client:
+            chunks = await crawl_doc_site(
+                DOC_URLS["migratorxpress"], "migratorxpress", client, _scope_for("0.6"))
+        # Breadth first from the root page; the depth-2 logging page is found,
+        # /latest, /0.60, external and mailto links are not followed.
+        assert fetched == [
+            f"{SITE}/sitemap.xml",
+            f"{SITE}/0.6",
+            f"{SITE}/0.6/compatibility",
+            f"{SITE}/0.6/reference/cli-reference",
+            f"{SITE}/0.6/reference/logging",
+            f"{SITE}/0.6/missing",
+        ]
+        assert {c["url"] for c in chunks} == set(LINKED_06_PAGES)
+
+    @pytest.mark.asyncio
+    async def test_each_page_fetched_once(self):
+        fetched: list = []
+        async with _mock_linked_client(fetched) as client:
+            await crawl_doc_site(
+                DOC_URLS["migratorxpress"], "migratorxpress", client, _scope_for("0.6"))
+        assert len(fetched) == len(set(fetched))
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("version", ["0.7", "0.8"])
+    async def test_listed_version_does_not_follow_links(self, version):
+        fetched: list = []
+        async with _mock_linked_client(fetched) as client:
+            await crawl_doc_site(
+                DOC_URLS["migratorxpress"], "migratorxpress", client, _scope_for(version))
+        assert fetched[1:] == [f"{SITE}/latest", f"{SITE}/latest/reference/cli-reference"]
+
+    @pytest.mark.asyncio
+    async def test_missing_root_page_gives_nothing(self):
+        fetched: list = []
+        async with _mock_linked_client(fetched, pages={}) as client:
+            chunks = await crawl_doc_site(
+                DOC_URLS["migratorxpress"], "migratorxpress", client, _scope_for("0.6"))
+        assert chunks == []
+        assert fetched == [f"{SITE}/sitemap.xml", f"{SITE}/0.6"]
+
+    @pytest.mark.asyncio
+    async def test_page_count_is_capped(self):
+        fetched: list = []
+        async with _mock_linked_client(fetched) as client:
+            chunks = await crawl_linked_pages(
+                _scope_for("0.6"), "migratorxpress", client, max_pages=2)
+        assert fetched == [f"{SITE}/0.6", f"{SITE}/0.6/compatibility"]
+        assert {c["url"] for c in chunks} == set(fetched)
+
+    @pytest.mark.asyncio
+    async def test_unscoped_site_without_urls_does_not_follow_links(self):
+        fetched: list = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            fetched.append(str(request.url))
+            return httpx.Response(404, text="Not found")
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            chunks = await crawl_doc_site(f"{SITE}/sitemap.xml", "migratorxpress", client)
+        assert chunks == []
+        assert fetched == [f"{SITE}/sitemap.xml"]
 
 
 class TestInitializeTargets:
@@ -141,10 +263,10 @@ class TestInitializeTargets:
     @pytest.mark.parametrize(
         "binary_output,doc_version,prefix",
         [
-            ("MigratorXpress version 0.8.2", "0.7", f"{SITE}/latest/"),
+            ("MigratorXpress version 0.8.2", "0.8", f"{SITE}/latest/"),
             ("MigratorXpress version 0.7.3", "0.7", f"{SITE}/latest/"),
             ("MigratorXpress version 0.6.30", "0.6", f"{SITE}/0.6/"),
-            (None, "0.7", f"{SITE}/latest/"),
+            (None, "0.8", f"{SITE}/latest/"),
         ],
     )
     async def test_migratorxpress_target(self, monkeypatch, tmp_path, binary_output, doc_version, prefix):
