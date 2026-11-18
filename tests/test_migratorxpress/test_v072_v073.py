@@ -64,9 +64,12 @@ class TestRegistry072073:
             assert new.load_modes == old.load_modes
             assert new.supports_upgrade_migdb and new.supports_project
 
-    def test_073_is_latest(self):
-        builder = CommandBuilder("/nonexistent/MigratorXpress")
-        assert builder.version_detector.capabilities == VERSION_REGISTRY["0.7.3"]
+    def test_073_is_latest_07(self):
+        latest_07 = max(
+            (v for v in VERSION_REGISTRY if v.startswith("0.7.")),
+            key=lambda v: tuple(int(x) for x in v.split(".")),
+        )
+        assert latest_07 == "0.7.3"
 
 
 class TestOptionalDbNames:
@@ -223,7 +226,7 @@ class TestPreviewTool:
         assert structured["status"] == "ok"
         assert "--source_db_name" not in structured["command"]
         assert "auth entry 'src'" in structured["explanation"]
-        # Latest known capabilities (0.7.3) apply in preview-only mode: no warning
+        # Latest known capabilities apply in preview-only mode: no warning
         assert structured["warnings"] == []
         jsonschema.validate(structured, PREVIEW_OUTPUT_SCHEMA)
 

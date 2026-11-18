@@ -1123,6 +1123,16 @@ VERSION_REGISTRY["0.6.5"] = replace(
     VERSION_REGISTRY["0.6.4"], supports_unbounded_number_type=True
 )
 
+# 0.6.6: Snowflake sessions opened with TIMEZONE = 'UTC'; FastBCP launched
+#        through its absolute path (Windows).
+# 0.6.7: cleanup fix (RUN_DELETE_FAILED on a run with exported files).
+# 0.6.8: incremental watermark moved at publish, not at export, for a sync with
+#        a publish target; Snowflake incremental fixes (append, upsert,
+#        delete_insert); exit code 43 when an export job cannot be created.
+# No CLI surface change in any of them; FastBCP 1.6.8 still bundled.
+for _version in ("0.6.6", "0.6.7", "0.6.8"):
+    VERSION_REGISTRY[_version] = replace(VERSION_REGISTRY["0.6.5"])
+
 
 def check_version_compatibility(
     command: str,

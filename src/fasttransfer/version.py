@@ -6,7 +6,7 @@ to their known capabilities (supported source/target types, parallelism
 methods, and feature flags).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, FrozenSet, Optional
 
 from ..base.version_detector import ToolVersion
@@ -24,6 +24,8 @@ class VersionCapabilities:
     supports_file_input: bool = False
     supports_settings_file: bool = False
     supports_license_path: bool = False
+    # 0.18.2+: no trial mode, a licence file is always required
+    requires_license: bool = False
 
 
 # Parallel methods added after 0.16, with the first version that accepts them
@@ -319,6 +321,15 @@ VERSION_REGISTRY: Dict[str, VersionCapabilities] = {
         supports_license_path=True,
     ),
 }
+
+# 0.18.2: licensing release. No trial mode: a licence file is always required
+# (exit code 99 without one; only --help and --version run). The default
+# FastTransfer.lic is looked up in the current directory, then next to the
+# binary, and multi-block licence files (MigratorXpress licences) are accepted.
+# No CLI change.
+VERSION_REGISTRY["0.18.2.0"] = replace(
+    VERSION_REGISTRY["0.18.1.0"], requires_license=True
+)
 
 
 def check_version_compatibility(

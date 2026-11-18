@@ -696,6 +696,19 @@ class TestLakeXpress065:
         assert '"use_adbc": true' in notes
         assert "--unbounded_number_type" in notes
 
+    def test_workflow_notes_snowflake_066_068(self):
+        notes = " ".join(suggest_workflow("oracle", "s3", "snowflake")["notes"])
+        assert "TIMEZONE = 'UTC'" in notes
+        assert "0.6.8" in notes and "watermark" in notes
+
+    def test_workflow_notes_watermark_only_with_publish_target(self):
+        notes = " ".join(suggest_workflow("postgresql", "s3")["notes"])
+        assert "watermark" not in notes
+        assert "TIMEZONE" not in notes
+        notes = " ".join(suggest_workflow("postgresql", "s3", "glue")["notes"])
+        assert "watermark" in notes
+        assert "TIMEZONE" not in notes
+
     def test_workflow_notes_oracle_without_snowflake(self):
         notes = " ".join(suggest_workflow("oracle", "s3", "glue")["notes"])
         assert '"use_adbc": true' in notes

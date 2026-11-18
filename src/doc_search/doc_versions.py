@@ -8,6 +8,8 @@ FASTTRANSFER_DOC_VERSIONS = ["0.14", "0.15", "0.16", "0.17", "0.18"]
 # binary of another series falls back to the latest one.
 LAKEXPRESS_DOC_VERSIONS = ["0.3", "0.6"]
 # MigratorXpress docs are versioned by minor release (0.6.x -> "0.6", 0.7.x -> "0.7").
+# 0.8 has no entry of its own: the pages at /latest/ describe it (--with_xid,
+# the license file) next to 0.7, and a 0.8 binary falls back to "0.7".
 MIGRATORXPRESS_DOC_VERSIONS = ["0.6", "0.7"]
 
 # Release-notes URL templates ({version} is substituted with e.g. "0.31")

@@ -19,12 +19,12 @@ from src.fastbcp.version import ADBC_MIN_VERSIONS
 class TestRegistry:
     def test_commercial_names_and_latest_versions(self):
         assert {d.name: d.version for d in ADBC_DRIVERS.values()} == {
-            "ArpeMSSQL": "0.8.0",
-            "ArpePGSQL": "0.5.2",
-            "ArpeOracle": "0.4.5",
-            "ArpeNetezza": "0.3.9",
-            "ArpeTeradata": "0.3.6",
-            "ArpeDb2": "0.4.0",
+            "ArpeMSSQL": "0.8.2",
+            "ArpePGSQL": "0.5.4",
+            "ArpeOracle": "0.4.7",
+            "ArpeNetezza": "0.3.11",
+            "ArpeTeradata": "0.3.8",
+            "ArpeDb2": "0.4.2",
         }
 
     def test_netezza_load_name_differs_from_docs_slug(self):
@@ -87,7 +87,7 @@ class TestAdbcInfoTool:
     async def test_detail(self):
         content, structured = await self.handler("adbc_info", {"driver": "adbc_teradata"})
         text = content[0].text
-        assert "ArpeTeradata" in text and "v0.3.6" in text
+        assert "ArpeTeradata" in text and "v0.3.8" in text
         assert 'driver="arpeteradata"' in text
         assert "sh -s -- arpeteradata --license" in structured["install"]["linux"]
         assert structured["drivers"][0]["fastbcp_type"] == "adbc_teradata"

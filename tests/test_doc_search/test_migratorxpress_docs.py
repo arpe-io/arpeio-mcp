@@ -45,6 +45,7 @@ class TestVersionMapping:
     @pytest.mark.parametrize(
         "detected,expected",
         [
+            ("0.8.2", "0.7"),  # 0.8 is documented at /latest/, like 0.7
             ("0.7.3", "0.7"),
             ("0.7.0.0", "0.7"),
             ("0.6.34", "0.6"),
@@ -140,6 +141,7 @@ class TestInitializeTargets:
     @pytest.mark.parametrize(
         "binary_output,doc_version,prefix",
         [
+            ("MigratorXpress version 0.8.2", "0.7", f"{SITE}/latest/"),
             ("MigratorXpress version 0.7.3", "0.7", f"{SITE}/latest/"),
             ("MigratorXpress version 0.6.30", "0.6", f"{SITE}/0.6/"),
             (None, "0.7", f"{SITE}/latest/"),

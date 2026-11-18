@@ -572,7 +572,7 @@ class TestRegistry050To065:
         assert VERSION_REGISTRY[version].supports_unbounded_number_type is expected
 
     @patch("src.base.version_detector.subprocess.run")
-    def test_065_is_latest_known(self, mock_run):
+    def test_065_detected(self, mock_run):
         mock_result = Mock()
         mock_result.stdout = "LakeXpress 0.6.5 (build 2026-11-16T12:00:00Z)\n"
         mock_result.stderr = ""
@@ -585,7 +585,6 @@ class TestRegistry050To065:
             "LakeXpress",
         )
         assert detector.detect() == ToolVersion(parts=(0, 6, 5))
-        assert detector._sorted_versions[-1][0] == ToolVersion(parts=(0, 6, 5))
         assert detector.capabilities is VERSION_REGISTRY["0.6.5"]
 
     def test_unbounded_number_type_warns_before_065(self):
@@ -609,12 +608,41 @@ class TestRegistry050To065:
         assert warnings == []
 
 
+class TestRegistry066To068:
+    """Registry entries for LakeXpress 0.6.6 - 0.6.8 (no CLI surface change)."""
+
+    RELEASED = ["0.6.6", "0.6.7", "0.6.8"]
+
+    @pytest.mark.parametrize("version", RELEASED)
+    def test_same_capabilities_as_065(self, version):
+        assert VERSION_REGISTRY[version] == VERSION_REGISTRY["0.6.5"]
+        assert VERSION_REGISTRY[version].requires_license is True
+        assert VERSION_REGISTRY[version].supports_unbounded_number_type is True
+
+    @patch("src.base.version_detector.subprocess.run")
+    def test_068_is_latest_known(self, mock_run):
+        mock_result = Mock()
+        mock_result.stdout = "LakeXpress 0.6.8 (build 2026-11-18T12:00:00Z)\n"
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        detector = VersionDetector(
+            "/fake/binary",
+            VERSION_REGISTRY,
+            r"LakeXpress\s+(\d+\.\d+\.\d+)",
+            "LakeXpress",
+        )
+        assert detector.detect() == ToolVersion(parts=(0, 6, 8))
+        assert detector._sorted_versions[-1][0] == ToolVersion(parts=(0, 6, 8))
+        assert detector.capabilities is VERSION_REGISTRY["0.6.8"]
+
+
 class TestLakeXpressDocVersions:
     """Doc search follows the versions the LakeXpress site publishes."""
 
     @pytest.mark.parametrize(
         "detected,expected",
-        [("0.6.5", "0.6"), ("0.3.5", "0.3"), ("0.4.10", "0.6"), (None, "0.6")],
+        [("0.6.8", "0.6"), ("0.6.5", "0.6"), ("0.3.5", "0.3"), ("0.4.10", "0.6"), (None, "0.6")],
     )
     def test_best_doc_version(self, detected, expected):
         from src.doc_search.cache import best_version_for

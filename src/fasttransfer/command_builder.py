@@ -210,6 +210,7 @@ class CommandBuilder(BaseCommandBuilder):
             "supports_file_input": caps.supports_file_input,
             "supports_settings_file": caps.supports_settings_file,
             "supports_license_path": caps.supports_license_path,
+            "requires_license": caps.requires_license,
         }
 
 

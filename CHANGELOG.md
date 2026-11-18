@@ -4,11 +4,22 @@
 
 ### Added
 
-- **LakeXpress 0.5.0 and 0.6.0 to 0.6.5 support**: new registry entries. The sources, storage backends, publish targets and commands are those of 0.4.10.
+- **LakeXpress 0.5.0 and 0.6.0 to 0.6.8 support**: new registry entries. The sources, storage backends, publish targets and commands are those of 0.4.10.
   - New `unbounded_number_type` option on `config_create` (0.6.5+) builds `--unbounded_number_type {decimal,varchar,decimal_strict}`: the Snowflake type of an Oracle `NUMBER` declared without precision. `varchar` and `decimal_strict` are refused without a `publish_target`, as LakeXpress stops such a sync with exit code 10. A version-compatibility warning is raised against a binary older than 0.6.5.
   - New `license_file` option on every command builds `--license_file <path>`. LakeXpress 0.6.0+ does not run without a license file.
   - `lakexpress_info` reports two new feature flags with `action="version"` (license required, unbounded number type), the extraction path of each source (ADBC or native) with `action="capabilities"`, and notes on the license, ADBC extraction and Oracle to Snowflake with `action="workflow"`.
-  - The server instructions gain a "LakeXpress 0.6 notes" section: license, exit codes 41 and 44 to 47, ADBC extraction, Oracle to Snowflake.
+  - The server instructions gain a "LakeXpress 0.6 notes" section: license, exit codes 41, 43 (0.6.8+) and 44 to 47, ADBC extraction, Oracle to Snowflake, Snowflake sessions in UTC (0.6.6+), and the incremental watermark that moves at publish for a sync with a publish target (0.6.8+).
+  - LakeXpress 0.6.6 to 0.6.8 change no option. `lakexpress_info` with `action="workflow"` notes the Snowflake session time zone and the 0.6.8 incremental fixes for a Snowflake target, and the watermark change for any publish target.
+- **MigratorXpress 0.8.0, 0.8.1 and 0.8.2 support**: new registry entries. The sources, targets and tasks are those of 0.7.3.
+  - New `with_xid` option (0.8.0+) builds `--with_xid`: skip an Oracle or Netezza table whose max `ROWID` / `CREATEXID` is unchanged since the last run. From 0.8.0 this skip is off by default, and `without_xid` is deprecated and ignored. Version-compatibility warnings are raised when `with_xid` is used against a binary older than 0.8.0, when `without_xid` is used against 0.8.0+, and when `with_xid` is combined with `drop_tables_if_exists=true`, which makes MigratorXpress ignore it.
+  - `migratorxpress_info` reports two new feature flags with `action="version"` (`with_xid`, license required), and notes on the license and on `with_xid` (Oracle and Netezza sources) with `action="workflow"`.
+  - The `license_file` description says that MigratorXpress 0.8.0+ does not run without a license file and where it is looked for. The `fasttransfer_dir_path` description says that the 0.8.0+ package bundles FastTransfer in `engine/`.
+- **FastTransfer 0.18.2 support**: new registry entry `0.18.2.0`, with no option change. This version has no trial mode and exits with code 99 without a license file: `fasttransfer_info` reports a "License Required" feature flag with `action="version"`, and the `license_path` description says where the license is looked for.
+- The server instructions gain a "MigratorXpress 0.8 and FastTransfer 0.18.2 notes" section: license files, `with_xid`, and the exit codes 40 and 41 of a `diff` step with tables that could not be compared (0.8.2+).
+
+### Changed
+
+- **Latest ADBC driver versions**: ArpeMSSQL 0.8.2, ArpePGSQL 0.5.4, ArpeOracle 0.4.7, ArpeNetezza 0.3.11, ArpeTeradata 0.3.8, ArpeDb2 0.4.2, as listed by the installer (`install.sh --list`). ArpeOracle's authentication says that the token methods (OCI IAM token, OAuth2 / Microsoft Entra ID) need a TLS connection that verifies the server certificate, as the driver requires from 0.4.6.
 
 ### Fixed
 

@@ -650,6 +650,22 @@ def suggest_workflow(
                 "not fit (needs ADBC)."
             )
         notes.append(note)
+    if (publish_target or "").lower() == "snowflake":
+        notes.append(
+            "LakeXpress 0.6.6+ opens every Snowflake session with TIMEZONE = 'UTC', "
+            "so timestamps without a time zone keep the source wall clock. Use "
+            "0.6.8+ for incremental tables published to Snowflake (append, upsert "
+            "and delete_insert were fixed in that version)."
+        )
+    if publish_target:
+        notes.append(
+            "From LakeXpress 0.6.8, the incremental watermark of a table moves "
+            "when the table is published, not when it is exported: a run that was "
+            "exported but not published is read again from the source. With "
+            "sync[export] then sync[publish], two exports with no publish in "
+            "between overlap: publish the latest run, as sync[publish] does by "
+            "default."
+        )
 
     return {
         "source_type": source_type,

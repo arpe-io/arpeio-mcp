@@ -234,7 +234,7 @@ Read-only advisory tools were consolidated into one `*_info` tool per product (w
 
 ### LakeXpress (3 tools)
 - `lakexpress_info` — Read-only advisory: `action="capabilities" | "workflow" | "version"`
-- `lakexpress_preview_command` — Build any LakeXpress command (`lxdb_*`, `config_*`, `sync`, `sync[export]`, `sync[publish]`, `run`, `status`, `cleanup`). On v0.4.0+ binaries, warns when `-a` / `--lxdb_auth_id` / `--sync_id` are missing on sync-family calls. Supports LakeXpress up to 0.6.5 (`unbounded_number_type`, `license_file`)
+- `lakexpress_preview_command` — Build any LakeXpress command (`lxdb_*`, `config_*`, `sync`, `sync[export]`, `sync[publish]`, `run`, `status`, `cleanup`). On v0.4.0+ binaries, warns when `-a` / `--lxdb_auth_id` / `--sync_id` are missing on sync-family calls. Supports LakeXpress up to 0.6.8 (`unbounded_number_type`, `license_file`)
 - `lakexpress_execute_command` — Run the command
 
 ### MigratorXpress (4 tools)
@@ -244,7 +244,7 @@ Read-only advisory tools were consolidated into one `*_info` tool per product (w
 - `migratorxpress_execute_command` — Run the migration
 
 ### Arpe ADBC drivers (1 tool)
-- `adbc_info` — The driver family with current versions (ArpeMSSQL 0.8.0, ArpePGSQL 0.5.2, ArpeOracle 0.4.5, ArpeNetezza 0.3.9, ArpeTeradata 0.3.6, ArpeDb2 0.4.0), or one driver's load name, connection URI, authentication, install command, licence setup and FastBCP `adbc_*` connection type. The drivers are libraries, so there is no preview/execute step
+- `adbc_info` — The driver family with current versions (ArpeMSSQL 0.8.2, ArpePGSQL 0.5.4, ArpeOracle 0.4.7, ArpeNetezza 0.3.11, ArpeTeradata 0.3.8, ArpeDb2 0.4.2), or one driver's load name, connection URI, authentication, install command, licence setup and FastBCP `adbc_*` connection type. The drivers are libraries, so there is no preview/execute step
 
 ### Meta (4 tools)
 - `arpe_get_status` — Status of all four CLIs (installed / command-builder-only)

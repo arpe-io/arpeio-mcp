@@ -280,7 +280,7 @@ def create_tools(
                             },
                             "license_path": {
                                 "type": "string",
-                                "description": "Absolute file path or URL to the FastTransfer license file. Only needed if the license is not in the default location next to the binary.",
+                                "description": "Path or URL of the FastTransfer license file, passed with --license. FastTransfer 0.18.2+ has no trial mode and does not run without a license (exit code 99; the free 30-day trial is a license file). Without license_path it looks for FastTransfer.lic in the current directory, then next to the binary. A MigratorXpress license file issued from 2026-10-26 also holds the FastTransfer license.",
                             },
                         },
                     },
@@ -879,6 +879,7 @@ def create_tools(
             f"- File Input: {'Yes' if caps['supports_file_input'] else 'No'}",
             f"- Settings File: {'Yes' if caps['supports_settings_file'] else 'No'}",
             f"- License Path: {'Yes' if caps['supports_license_path'] else 'No'}",
+            f"- License Required: {'Yes' if caps.get('requires_license') else 'No'}",
         ]
 
         return [TextContent(type="text", text="\n".join(response))]

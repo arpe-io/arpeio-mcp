@@ -262,7 +262,10 @@ def create_tools(
                     },
                     "fasttransfer_dir_path": {
                         "type": "string",
-                        "description": "Path to FastTransfer binary directory for parallel data transfer",
+                        "description": (
+                            "Path to FastTransfer binary directory for parallel data transfer. The "
+                            "0.8.0+ package bundles FastTransfer in engine/, where it is found automatically"
+                        ),
                     },
                     "fasttransfer_p": {
                         "type": "integer",
@@ -355,10 +358,24 @@ def create_tools(
                         "default": False,
                         "description": "Use basic diff mode (row counts only, no checksum)",
                     },
+                    "with_xid": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": (
+                            "Incremental transfer (0.8.0+): skip an Oracle or Netezza table whose "
+                            "max ROWID / CREATEXID is unchanged since the last run and whose target "
+                            "table holds rows. Off by default from 0.8.0. Ignored with "
+                            "drop_tables_if_exists=true, no effect for a PostgreSQL or SQL Server source"
+                        ),
+                    },
                     "without_xid": {
                         "type": "boolean",
                         "default": False,
-                        "description": "Disable transaction ID tracking during transfer",
+                        "description": (
+                            "Before 0.8.0: transfer every Oracle / Netezza table, also those unchanged "
+                            "since the last run. Deprecated and ignored from 0.8.0, where this is the "
+                            "default (see with_xid)"
+                        ),
                     },
                     "fk_mode": {
                         "type": "string",
@@ -395,7 +412,13 @@ def create_tools(
                     },
                     "license_file": {
                         "type": "string",
-                        "description": "Path to license key file",
+                        "description": (
+                            "Path to the license file, passed with --license_file. MigratorXpress 0.8.0+ "
+                            "needs a license, also for the free 30-day trial (exit code 13 without one); "
+                            "without license or license_file it looks in MIGRATORXPRESS_LICENSE, "
+                            "~/.migratorxpress/license.lic, %APPDATA%\\MigratorXpress\\license.lic "
+                            "and ./license.lic"
+                        ),
                     },
                     "project": {
                         "type": "string",
@@ -1034,6 +1057,8 @@ def create_tools(
             f"- Upgrade Migration DB: {'Yes' if caps.get('supports_upgrade_migdb') else 'No'}",
             f"- Optional DB Names: {'Yes' if caps.get('supports_optional_db_names') else 'No'}",
             f"- drop_tables_if_exists true/false: {'Yes' if caps.get('supports_drop_tables_bool_parsing') else 'No'}",
+            f"- with_xid (incremental skip is opt-in): {'Yes' if caps.get('supports_with_xid') else 'No'}",
+            f"- License Required: {'Yes' if caps.get('requires_license') else 'No'}",
         ]
 
         return [TextContent(type="text", text="\n".join(response))]

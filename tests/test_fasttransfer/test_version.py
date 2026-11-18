@@ -221,8 +221,8 @@ class TestVersionDetector:
         detector.detect()
         caps = detector.capabilities
 
-        # Should get the latest known capabilities (0.18.1.0)
-        assert caps is VERSION_REGISTRY["0.18.1.0"]
+        # Should get the latest known capabilities (0.18.2.0)
+        assert caps is VERSION_REGISTRY["0.18.2.0"]
 
     @patch("src.base.version_detector.subprocess.run")
     def test_capabilities_undetected_version(self, mock_run):
@@ -239,7 +239,7 @@ class TestVersionDetector:
         caps = detector.capabilities
 
         # Should fall back to latest known
-        assert caps is VERSION_REGISTRY["0.18.1.0"]
+        assert caps is VERSION_REGISTRY["0.18.2.0"]
 
     def test_registry_016_source_completeness(self):
         """Test that 0.16.0.0 registry has all expected source types."""
@@ -303,12 +303,24 @@ class TestVersionDetector:
         """0.17.1.0 is registered."""
         assert "0.17.1.0" in VERSION_REGISTRY
 
-    def test_registry_0181_is_latest(self):
-        """0.18.0.0 and 0.18.1.0 are registered; 0.18.1.0 is the latest known version."""
+    def test_registry_0182_is_latest(self):
+        """0.18.0.0 to 0.18.2.0 are registered; 0.18.2.0 is the latest known version."""
         assert "0.18.0.0" in VERSION_REGISTRY
         assert "0.18.1.0" in VERSION_REGISTRY
+        assert "0.18.2.0" in VERSION_REGISTRY
         latest = max(VERSION_REGISTRY, key=lambda v: tuple(int(x) for x in v.split(".")))
-        assert latest == "0.18.1.0"
+        assert latest == "0.18.2.0"
+
+    def test_registry_0182_requires_license_same_cli_surface(self):
+        """0.18.2 is a licensing release: a licence is always required, no CLI change."""
+        from dataclasses import replace
+
+        assert VERSION_REGISTRY["0.18.2.0"].requires_license is True
+        assert VERSION_REGISTRY["0.18.1.0"].requires_license is False
+        assert (
+            replace(VERSION_REGISTRY["0.18.2.0"], requires_license=False)
+            == VERSION_REGISTRY["0.18.1.0"]
+        )
 
     def test_registry_018_adds_partition_methods(self):
         """0.18 adds DBPartition and Timepartition; types are unchanged from 0.17.1."""
@@ -329,7 +341,7 @@ class TestVersionDetector:
             assert "DBPartition" not in methods
             assert "Timepartition" not in methods
 
-    @pytest.mark.parametrize("ver", ["0.18.0.0", "0.18.1.0"])
+    @pytest.mark.parametrize("ver", ["0.18.0.0", "0.18.1.0", "0.18.2.0"])
     @patch("src.base.version_detector.subprocess.run")
     def test_detect_018_exact_match(self, mock_run, ver):
         """Detecting 'FastTransfer Version 0.18.x.0' resolves to its registry entry."""
@@ -422,7 +434,7 @@ class TestPartitionMethodVersionGates:
         assert ver in warnings[0]
 
     @pytest.mark.parametrize("method", ["DBPartition", "Timepartition"])
-    @pytest.mark.parametrize("ver", ["0.18.0.0", "0.18.1.0"])
+    @pytest.mark.parametrize("ver", ["0.18.0.0", "0.18.1.0", "0.18.2.0"])
     def test_no_warning_on_018(self, method, ver):
         caps = VERSION_REGISTRY[ver]
         warnings = check_version_compatibility(

@@ -66,7 +66,7 @@ class TestEnum:
 
     def test_enum_matches_latest_registry(self):
         """Every method the latest binary accepts is in the schema enum, and vice versa."""
-        latest = VERSION_REGISTRY["0.18.1.0"]
+        latest = VERSION_REGISTRY["0.18.2.0"]
         assert {m.value for m in ParallelismMethod} == set(latest.parallelism_methods)
 
 
@@ -213,7 +213,7 @@ class TestPreviewTool:
         })
         assert structured["status"] == "ok"
         assert "FASTTRANSFER_DATEFORMAT" in structured["explanation"]
-        # Latest known capabilities (0.18.1) apply in preview-only mode: no warning
+        # Latest known capabilities (0.18.2) apply in preview-only mode: no warning
         assert structured["warnings"] == []
         jsonschema.validate(structured, PREVIEW_OUTPUT_SCHEMA)
 
@@ -313,7 +313,7 @@ class TestDocVersions:
 
     @pytest.mark.parametrize(
         "detected,expected",
-        [("0.18.1.0", "0.18"), ("0.18.0.0", "0.18"), ("0.17.1.0", "0.17"), (None, "0.18")],
+        [("0.18.2.0", "0.18"), ("0.18.1.0", "0.18"), ("0.18.0.0", "0.18"), ("0.17.1.0", "0.17"), (None, "0.18")],
     )
     def test_detected_version_maps_to_doc_version(self, detected, expected):
         assert best_version_for("fasttransfer", detected, FASTTRANSFER_DOC_VERSIONS) == expected

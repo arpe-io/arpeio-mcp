@@ -88,12 +88,12 @@ from any ADBC driver manager.
 
 | Driver | Database | Load name | Latest | FastBCP type |
 |--------|----------|-----------|--------|--------------|
-| **ArpeMSSQL** | SQL Server, Azure SQL, Fabric | `arpemssql` | 0.8.0 | `adbc_mssql` |
-| **ArpePGSQL** | PostgreSQL and compatibles | `arpepgsql` | 0.5.2 | `adbc_pgsql` |
-| **ArpeOracle** | Oracle, Oracle Cloud ADB | `arpeoracle` | 0.4.5 | `adbc_oracle` |
-| **ArpeNetezza** | IBM Netezza / Cloud NPS | `arpenz` | 0.3.9 | `adbc_netezza` |
-| **ArpeTeradata** | Teradata | `arpeteradata` | 0.3.6 | `adbc_teradata` |
-| **ArpeDb2** | IBM Db2 (LUW, Db2 for i) | `arpedb2` | 0.4.0 | `adbc_db2` |
+| **ArpeMSSQL** | SQL Server, Azure SQL, Fabric | `arpemssql` | 0.8.2 | `adbc_mssql` |
+| **ArpePGSQL** | PostgreSQL and compatibles | `arpepgsql` | 0.5.4 | `adbc_pgsql` |
+| **ArpeOracle** | Oracle, Oracle Cloud ADB | `arpeoracle` | 0.4.7 | `adbc_oracle` |
+| **ArpeNetezza** | IBM Netezza / Cloud NPS | `arpenz` | 0.3.11 | `adbc_netezza` |
+| **ArpeTeradata** | Teradata | `arpeteradata` | 0.3.8 | `adbc_teradata` |
+| **ArpeDb2** | IBM Db2 (LUW, Db2 for i) | `arpedb2` | 0.4.2 | `adbc_db2` |
 
 Call `adbc_info` for \
 URIs, install commands and licence setup, and `arpe_release_notes` with the \
@@ -154,10 +154,11 @@ without one every command except `--help` and `--version` exits 13. LakeXpress \
 reads it from `LAKEXPRESS_LICENSE`, `--license` (text), `--license_file` (path), \
 `~/.lakexpress/license.lic`, `%APPDATA%\\LakeXpress\\license.lic` or \
 `./license.lic`. Pass a path with `license_file`, not `license`. The same file \
-licenses the FastBCP bundled in `engine/` (1.6.8 in LakeXpress 0.6.5).
+licenses the FastBCP bundled in `engine/` (1.6.8 in LakeXpress 0.6.5 to 0.6.8).
 - **Exit codes** (0.6.2+): 40 some tables failed (resume), 41 every table \
 failed, 44 no table matched, 45 no run to resume or publish, 46 publishing \
-failed, 47 export and publishing both had failures, 34 FastBCP older than 1.4.0.
+failed, 47 export and publishing both had failures, 34 FastBCP older than 1.4.0. \
+From 0.6.8, 43 when the export job of a table cannot be created.
 - **ADBC extraction** (0.6.3+) is the default for SQL Server, PostgreSQL and \
 Teradata sources; Oracle uses it only on request. It is set in the credentials \
 file, not on the command line: `"use_adbc": true` or `false` next to `ds_type` \
@@ -167,6 +168,35 @@ use `unbounded_number_type` on `config_create` for `NUMBER` columns without \
 precision: `decimal` (default, `NUMBER(38,18)`, rounded beyond 18 decimal \
 places), `varchar` (every digit kept) or `decimal_strict` (the export fails on a \
 value that does not fit; needs ADBC).
+- **Snowflake time zone** (0.6.6+): every Snowflake session is opened with \
+`TIMEZONE = 'UTC'`, so timestamps without a time zone keep the source wall \
+clock. Tables loaded by an earlier version keep their shifted values until \
+they are published again.
+- **Incremental with a publish target** (0.6.8+): the watermark of a table \
+moves when the table is published, not when it is exported, so a run that \
+was exported but not published is read again from the source. With \
+`sync[export]` then `sync[publish]`, two exports with no publish in between \
+overlap: publish the latest run, as `sync[publish]` does by default. \
+Use 0.6.8+ for incremental `append`, `upsert` or `delete_insert` into Snowflake.
+
+## MigratorXpress 0.8 and FastTransfer 0.18.2 notes
+
+- **A license file is required** from MigratorXpress 0.8.0, also for the free \
+30-day trial: without one every command except `--help` and `--version` exits \
+13. It is read from `MIGRATORXPRESS_LICENSE`, `--license` (text), \
+`--license_file` (path), `~/.migratorxpress/license.lic`, \
+`%APPDATA%\\MigratorXpress\\license.lic` or `./license.lic`. A license issued \
+from 2026-10-26 also licenses the FastTransfer bundled in `engine/` (0.18.1 in \
+MigratorXpress 0.8.0 to 0.8.2), so `fasttransfer_dir_path` can be omitted.
+- **FastTransfer 0.18.2+ has no trial mode**: without a license it exits 99. It \
+reads `--license` (`license_path`), else `FastTransfer.lic` in the current \
+directory, then next to the binary.
+- **`with_xid`** (MigratorXpress 0.8.0+): Oracle and Netezza tables are now \
+always transferred. `with_xid=true` skips a table whose max `ROWID` / \
+`CREATEXID` is unchanged since the last run and whose target holds rows. \
+`without_xid` is deprecated and ignored from 0.8.0.
+- **Diff** (0.8.2+): a table that could not be compared fails the `diff` step, \
+and the run exits 40 or 41. A table that merely differs does not fail the run.
 
 ## Parallelism in LakeXpress
 

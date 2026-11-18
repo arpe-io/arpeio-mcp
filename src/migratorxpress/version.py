@@ -6,7 +6,7 @@ registry mapping known MigratorXpress versions to their capabilities.
 Version detection is handled by the base BaseVersionDetector.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, FrozenSet, Optional
 
 
@@ -33,6 +33,11 @@ class VersionCapabilities:
     supports_upgrade_migdb: bool = False
     supports_optional_db_names: bool = False
     supports_drop_tables_bool_parsing: bool = False
+    # 0.8.0+: --with_xid enables the Oracle / Netezza incremental skip, which is
+    # off by default; --without_xid is deprecated and ignored
+    supports_with_xid: bool = False
+    # 0.8.0+: a licence file is always required (no build-date trial)
+    requires_license: bool = False
 
 
 # Static version registry: version string -> capabilities
@@ -417,6 +422,19 @@ VERSION_REGISTRY: Dict[str, VersionCapabilities] = {
     ),
 }
 
+# 0.8.0: a licence file is required, also for the free 30-day trial (exit code
+#        13 without one); it also carries the FastTransfer and ADBC licences.
+#        One package per platform with FastTransfer bundled in engine/. New
+#        --with_xid: Oracle and Netezza tables are always transferred unless it
+#        is given; --without_xid is deprecated and ignored.
+# 0.8.1: security release (bundled dependencies), no CLI change.
+# 0.8.2: diff fixes; a table that cannot be compared fails the diff step
+#        (exit code 40 or 41). No CLI change.
+for _version in ("0.8.0", "0.8.1", "0.8.2"):
+    VERSION_REGISTRY[_version] = replace(
+        VERSION_REGISTRY["0.7.3"], supports_with_xid=True, requires_license=True
+    )
+
 
 def check_version_compatibility(
     params: dict,
@@ -489,5 +507,26 @@ def check_version_compatibility(
 
     # --drop_tables_if_exists false is parsed as True before 0.7.2 (type=bool);
     # the command builder never emits "false", so no warning is needed.
+
+    # --with_xid exists from 0.8.0, where the incremental skip is off by default
+    if params.get("with_xid"):
+        if not capabilities.supports_with_xid:
+            warnings.append(
+                f"--with_xid requires MigratorXpress 0.8.0+, but detected version "
+                f"is {ver_str}. Earlier versions skip unchanged Oracle and Netezza "
+                f"tables by default, unless --without_xid is given"
+            )
+        elif str(params.get("drop_tables_if_exists", "")).lower() == "true":
+            warnings.append(
+                "--with_xid is ignored with --drop_tables_if_exists: every table "
+                "is recreated, so every table is transferred"
+            )
+
+    # --without_xid is deprecated and ignored from 0.8.0 on
+    if params.get("without_xid") and capabilities.supports_with_xid:
+        warnings.append(
+            "--without_xid is deprecated and ignored since MigratorXpress 0.8.0: "
+            "tables are always transferred unless --with_xid is given"
+        )
 
     return warnings

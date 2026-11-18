@@ -60,6 +60,8 @@ class CommandBuilder(BaseCommandBuilder):
             "supports_upgrade_migdb": caps.supports_upgrade_migdb,
             "supports_optional_db_names": caps.supports_optional_db_names,
             "supports_drop_tables_bool_parsing": caps.supports_drop_tables_bool_parsing,
+            "supports_with_xid": caps.supports_with_xid,
+            "requires_license": caps.requires_license,
         }
 
     def build_command(self, params: MigrationParams) -> List[str]:
@@ -177,6 +179,8 @@ class CommandBuilder(BaseCommandBuilder):
             cmd.append("-f")
         if params.basic_diff:
             cmd.append("--basic_diff")
+        if params.with_xid:
+            cmd.append("--with_xid")
         if params.without_xid:
             cmd.append("--without_xid")
 
@@ -442,6 +446,22 @@ def suggest_workflow(
         "--target_db_name is optional: both databases are read from the auth "
         "entries. Keep them for 0.7.1 and earlier, where they are required."
     )
+    notes.append(
+        "MigratorXpress 0.8.0+ needs a license file, also for the free 30-day "
+        "trial (exit code 13 without one). It is read from MIGRATORXPRESS_LICENSE, "
+        "--license, --license_file, ~/.migratorxpress/license.lic (Linux), "
+        "%APPDATA%\\MigratorXpress\\license.lic (Windows) or ./license.lic. A "
+        "license issued from 2026-10-26 also licenses FastTransfer, which the "
+        "0.8.0+ package bundles in engine/."
+    )
+    if src in ("oracle", "netezza"):
+        notes.append(
+            "From 0.8.0, every table of an Oracle or Netezza source is "
+            "transferred at each run. Pass with_xid=true to skip the tables whose "
+            "max ROWID (Oracle) or CREATEXID (Netezza) is unchanged since the "
+            "last run; before 0.8.0 that skip was the default, disabled with "
+            "without_xid=true."
+        )
 
     return {
         "source_type": source_type,

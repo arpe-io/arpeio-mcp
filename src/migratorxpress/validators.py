@@ -192,7 +192,15 @@ class MigrationParams(BaseModel):
     # Boolean flags
     force: bool = Field(False, description="Force operation")
     basic_diff: bool = Field(False, description="Use basic diff mode")
-    without_xid: bool = Field(False, description="Disable XID tracking")
+    with_xid: bool = Field(
+        False,
+        description="Skip Oracle / Netezza tables unchanged since the last run (0.8.0+)",
+    )
+    without_xid: bool = Field(
+        False,
+        description="Disable the Oracle / Netezza incremental skip (before 0.8.0; "
+        "deprecated and ignored from 0.8.0)",
+    )
 
     # FK
     fk_mode: Optional[FkMode] = Field(None, description="Foreign key constraint mode")
