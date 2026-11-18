@@ -226,7 +226,7 @@ class TestVersionDetector:
         caps = detector.capabilities
 
         # Should get the latest known capabilities
-        assert caps == VERSION_REGISTRY["0.4.0"]
+        assert caps == VERSION_REGISTRY["0.6.5"]
 
     @patch("src.base.version_detector.subprocess.run")
     def test_capabilities_undetected_version(self, mock_run):
@@ -243,7 +243,7 @@ class TestVersionDetector:
         caps = detector.capabilities
 
         # Should fall back to latest known
-        assert caps == VERSION_REGISTRY["0.4.0"]
+        assert caps == VERSION_REGISTRY["0.6.5"]
 
     def test_registry_028_source_completeness(self):
         """Test that 0.2.8 registry has all expected source databases."""
@@ -488,7 +488,7 @@ class TestRegistry045To0410:
         assert VERSION_REGISTRY[version].supports_sync_registry is False
 
     @patch("src.base.version_detector.subprocess.run")
-    def test_0410_is_latest_known(self, mock_run):
+    def test_0410_resolves_to_its_own_entry(self, mock_run):
         """0.4.10 sorts numerically after 0.4.9 and resolves to its own entry."""
         mock_result = Mock()
         mock_result.stdout = "LakeXpress 0.4.10 (build 2026-09-24T12:00:00Z)\n"
@@ -502,7 +502,6 @@ class TestRegistry045To0410:
             "LakeXpress",
         )
         assert detector.detect() == ToolVersion(parts=(0, 4, 10))
-        assert detector._sorted_versions[-1][0] == ToolVersion(parts=(0, 4, 10))
         assert detector.capabilities is VERSION_REGISTRY["0.4.10"]
 
     @pytest.mark.parametrize(
@@ -529,3 +528,109 @@ class TestRegistry045To0410:
             "LakeXpress",
         )
         assert detector.detect() == ToolVersion(parts=expected)
+
+
+class TestRegistry050To065:
+    """Registry entries for LakeXpress 0.5.0 - 0.6.5."""
+
+    RELEASED = ["0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.6.3", "0.6.4", "0.6.5"]
+
+    @pytest.mark.parametrize("version", RELEASED)
+    def test_released_versions_registered(self, version):
+        assert version in VERSION_REGISTRY
+
+    @pytest.mark.parametrize("version", RELEASED)
+    def test_same_databases_targets_and_commands_as_0410(self, version):
+        """No source, storage, target or command was added after 0.4.10."""
+        caps, base = VERSION_REGISTRY[version], VERSION_REGISTRY["0.4.10"]
+        for field in (
+            "source_databases",
+            "log_databases",
+            "storage_backends",
+            "publish_targets",
+            "compression_types",
+            "commands",
+        ):
+            assert getattr(caps, field) == getattr(base, field)
+        assert caps.supports_sync_registry is False
+
+    def test_050_matches_0410(self):
+        assert VERSION_REGISTRY["0.5.0"] == VERSION_REGISTRY["0.4.10"]
+
+    @pytest.mark.parametrize(
+        "version,expected",
+        [("0.4.10", False), ("0.5.0", False), ("0.6.0", True), ("0.6.5", True)],
+    )
+    def test_license_required_from_060(self, version, expected):
+        assert VERSION_REGISTRY[version].requires_license is expected
+
+    @pytest.mark.parametrize(
+        "version,expected",
+        [("0.6.0", False), ("0.6.4", False), ("0.6.5", True)],
+    )
+    def test_unbounded_number_type_from_065(self, version, expected):
+        assert VERSION_REGISTRY[version].supports_unbounded_number_type is expected
+
+    @patch("src.base.version_detector.subprocess.run")
+    def test_065_is_latest_known(self, mock_run):
+        mock_result = Mock()
+        mock_result.stdout = "LakeXpress 0.6.5 (build 2026-11-16T12:00:00Z)\n"
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        detector = VersionDetector(
+            "/fake/binary",
+            VERSION_REGISTRY,
+            r"LakeXpress\s+(\d+\.\d+\.\d+)",
+            "LakeXpress",
+        )
+        assert detector.detect() == ToolVersion(parts=(0, 6, 5))
+        assert detector._sorted_versions[-1][0] == ToolVersion(parts=(0, 6, 5))
+        assert detector.capabilities is VERSION_REGISTRY["0.6.5"]
+
+    def test_unbounded_number_type_warns_before_065(self):
+        warnings = check_version_compatibility(
+            "config_create",
+            {"unbounded_number_type": "varchar"},
+            VERSION_REGISTRY["0.6.4"],
+            ToolVersion(parts=(0, 6, 4)),
+        )
+        assert len(warnings) == 1
+        assert "--unbounded_number_type requires LakeXpress 0.6.5+" in warnings[0]
+        assert "0.6.4" in warnings[0]
+
+    def test_unbounded_number_type_no_warning_on_065(self):
+        warnings = check_version_compatibility(
+            "config_create",
+            {"unbounded_number_type": "decimal_strict"},
+            VERSION_REGISTRY["0.6.5"],
+            ToolVersion(parts=(0, 6, 5)),
+        )
+        assert warnings == []
+
+
+class TestLakeXpressDocVersions:
+    """Doc search follows the versions the LakeXpress site publishes."""
+
+    @pytest.mark.parametrize(
+        "detected,expected",
+        [("0.6.5", "0.6"), ("0.3.5", "0.3"), ("0.4.10", "0.6"), (None, "0.6")],
+    )
+    def test_best_doc_version(self, detected, expected):
+        from src.doc_search.cache import best_version_for
+        from src.doc_search.doc_versions import LAKEXPRESS_DOC_VERSIONS
+
+        assert (
+            best_version_for("lakexpress", detected, LAKEXPRESS_DOC_VERSIONS)
+            == expected
+        )
+
+    def test_06_is_served_at_latest(self):
+        from src.doc_search.doc_versions import DOC_URL_VERSION_ALIASES, DOC_URLS
+
+        version = DOC_URL_VERSION_ALIASES["lakexpress"].get("0.6", "0.6")
+        assert (
+            DOC_URLS["lakexpress"].format(version=version)
+            == "https://lakexpress-docs.arpe.io/latest/sitemap"
+        )
+        assert DOC_URL_VERSION_ALIASES["lakexpress"].get("0.3", "0.3") == "0.3"

@@ -6,7 +6,7 @@ to their known capabilities (supported source databases, log databases,
 storage backends, publish targets, compression types, and feature flags).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, FrozenSet, Optional
 
 from ..base.version_detector import ToolVersion
@@ -35,6 +35,13 @@ class VersionCapabilities:
     # so -a, --lxdb_auth_id, and --sync_id are mandatory on every sync call.
     # Pre-0.4 versions defaulted to True (registry-backed); 0.4+ flips this off.
     supports_sync_registry: bool = True
+    # 0.6.0+ does not run without a licence file: the build-date trial is gone
+    # and the free trial is a 30-day licence file. Every command except
+    # --help / --version exits 13 without one.
+    requires_license: bool = False
+    # 0.6.5+: config create --unbounded_number_type {decimal,varchar,decimal_strict}
+    # (Oracle NUMBER without precision, published to Snowflake).
+    supports_unbounded_number_type: bool = False
 
 
 # Static version registry: version string -> capabilities
@@ -1093,6 +1100,29 @@ VERSION_REGISTRY: Dict[str, VersionCapabilities] = {
     ),
 }
 
+# 0.5.0: exit codes reflect the cause (FastBCP not found = 30, too old = 34),
+# FastBCP engine check before each export. No CLI surface change.
+VERSION_REGISTRY["0.5.0"] = replace(VERSION_REGISTRY["0.4.10"])
+
+# 0.6.0: a licence file is required (also for the free trial), one package per
+# platform with FastBCP bundled in engine/, the binary returns its exit codes.
+# 0.6.1: bug and security fixes.
+# 0.6.2: exit codes 41 and 44-47, FastBCP 1.4.0 minimum, --log_dir honoured.
+# 0.6.3: ADBC extraction by default for SQL Server, PostgreSQL and Teradata
+#        ("use_adbc" in the credentials file, not on the command line).
+# 0.6.4: security fix.
+# No CLI surface change in any of them.
+for _version in ("0.6.0", "0.6.1", "0.6.2", "0.6.3", "0.6.4"):
+    VERSION_REGISTRY[_version] = replace(
+        VERSION_REGISTRY["0.5.0"], requires_license=True
+    )
+
+# 0.6.5: config create --unbounded_number_type; Oracle to Snowflake column
+# types changed; FastBCP 1.6.8 bundled.
+VERSION_REGISTRY["0.6.5"] = replace(
+    VERSION_REGISTRY["0.6.4"], supports_unbounded_number_type=True
+)
+
 
 def check_version_compatibility(
     command: str,
@@ -1155,6 +1185,16 @@ def check_version_compatibility(
             ver_str = str(detected_version) if detected_version else "unknown"
             warnings.append(
                 f"--env_name requires LakeXpress 0.3.0+, "
+                f"but detected version is {ver_str}"
+            )
+
+    # --unbounded_number_type requires LakeXpress 0.6.5+
+    unbounded = params.get("unbounded_number_type")
+    if command == "config_create" and unbounded:
+        if not capabilities.supports_unbounded_number_type:
+            ver_str = str(detected_version) if detected_version else "unknown"
+            warnings.append(
+                f"--unbounded_number_type requires LakeXpress 0.6.5+, "
                 f"but detected version is {ver_str}"
             )
 

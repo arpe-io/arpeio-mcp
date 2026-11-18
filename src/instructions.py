@@ -124,6 +124,27 @@ alias was requested.
 `--publish_method internal` for COPY into Redshift tables, or `external` \
 for Spectrum-style external tables sitting on S3.
 
+## LakeXpress 0.6 notes
+
+- **A license file is required** from 0.6.0, also for the free 30-day trial: \
+without one every command except `--help` and `--version` exits 13. LakeXpress \
+reads it from `LAKEXPRESS_LICENSE`, `--license` (text), `--license_file` (path), \
+`~/.lakexpress/license.lic`, `%APPDATA%\\LakeXpress\\license.lic` or \
+`./license.lic`. Pass a path with `license_file`, not `license`. The same file \
+licenses the FastBCP bundled in `engine/` (1.6.8 in LakeXpress 0.6.5).
+- **Exit codes** (0.6.2+): 40 some tables failed (resume), 41 every table \
+failed, 44 no table matched, 45 no run to resume or publish, 46 publishing \
+failed, 47 export and publishing both had failures, 34 FastBCP older than 1.4.0.
+- **ADBC extraction** (0.6.3+) is the default for SQL Server, PostgreSQL and \
+Teradata sources; Oracle uses it only on request. It is set in the credentials \
+file, not on the command line: `"use_adbc": true` or `false` next to `ds_type` \
+of the source entry. Some Parquet types differ between ADBC and the native driver.
+- **Oracle to Snowflake** (0.6.5+): set `"use_adbc": true` on the source, and \
+use `unbounded_number_type` on `config_create` for `NUMBER` columns without \
+precision: `decimal` (default, `NUMBER(38,18)`, rounded beyond 18 decimal \
+places), `varchar` (every digit kept) or `decimal_strict` (the export fails on a \
+value that does not fit; needs ADBC).
+
 ## Parallelism in LakeXpress
 
 LakeXpress does NOT accept `--parallelmethod`, `--parallelkey`, or \

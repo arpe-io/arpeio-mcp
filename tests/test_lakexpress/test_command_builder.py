@@ -598,6 +598,110 @@ class TestCommandBuilder:
         assert "Return Code: 0" in log_content
 
 
+class TestLakeXpress065:
+    """--unbounded_number_type (0.6.5) and --license_file."""
+
+    BASE = {
+        "auth_file": "auth.json",
+        "log_db_auth_id": "export_db",
+        "source_db_auth_id": "source_oracle",
+        "target_storage_id": "s3_01",
+    }
+
+    @pytest.mark.parametrize("value", ["decimal", "varchar", "decimal_strict"])
+    def test_unbounded_number_type_flag(self, command_builder, value):
+        request = LakeXpressRequest(
+            command=CommandType.CONFIG_CREATE,
+            config_create={
+                **self.BASE,
+                "publish_target": "snowflake_prod",
+                "unbounded_number_type": value,
+            },
+        )
+        command = command_builder.build_command(request)
+        assert command[command.index("--unbounded_number_type") + 1] == value
+
+    def test_unbounded_number_type_absent_by_default(self, command_builder):
+        request = LakeXpressRequest(
+            command=CommandType.CONFIG_CREATE, config_create=self.BASE
+        )
+        assert "--unbounded_number_type" not in command_builder.build_command(request)
+
+    def test_unbounded_number_type_rejects_unknown_value(self):
+        with pytest.raises(ValueError):
+            LakeXpressRequest(
+                command=CommandType.CONFIG_CREATE,
+                config_create={
+                    **self.BASE,
+                    "publish_target": "snowflake_prod",
+                    "unbounded_number_type": "text",
+                },
+            )
+
+    @pytest.mark.parametrize("value", ["varchar", "decimal_strict"])
+    def test_non_default_value_needs_publish_target(self, value):
+        with pytest.raises(ValueError, match="requires publish_target"):
+            LakeXpressRequest(
+                command=CommandType.CONFIG_CREATE,
+                config_create={**self.BASE, "unbounded_number_type": value},
+            )
+
+    def test_decimal_allowed_without_publish_target(self, command_builder):
+        request = LakeXpressRequest(
+            command=CommandType.CONFIG_CREATE,
+            config_create={**self.BASE, "unbounded_number_type": "decimal"},
+        )
+        assert "--unbounded_number_type" in command_builder.build_command(request)
+
+    def test_license_file_on_config_create(self, command_builder):
+        request = LakeXpressRequest(
+            command=CommandType.CONFIG_CREATE,
+            config_create={**self.BASE, "license_file": "/opt/lx/license.lic"},
+        )
+        command = command_builder.build_command(request)
+        assert command[command.index("--license_file") + 1] == "/opt/lx/license.lic"
+        assert "--license" not in command
+
+    def test_license_file_on_sync(self, command_builder):
+        request = LakeXpressRequest(
+            command=CommandType.SYNC,
+            sync={
+                "sync_id": "my-sync",
+                "auth_file": "auth.json",
+                "log_db_auth_id": "export_db",
+                "license_file": "/opt/lx/license.lic",
+            },
+        )
+        command = command_builder.build_command(request)
+        assert command[command.index("--license_file") + 1] == "/opt/lx/license.lic"
+
+    def test_license_text_still_uses_license_flag(self, command_builder):
+        request = LakeXpressRequest(
+            command=CommandType.CONFIG_CREATE,
+            config_create={**self.BASE, "license": "LICENSE-TEXT"},
+        )
+        command = command_builder.build_command(request)
+        assert command[command.index("--license") + 1] == "LICENSE-TEXT"
+        assert "--license_file" not in command
+
+    def test_workflow_notes_license_and_adbc(self):
+        workflow = suggest_workflow("postgresql", "s3", "snowflake")
+        notes = " ".join(workflow["notes"])
+        assert "license" in notes
+        assert '"use_adbc": false' in notes
+        assert "unbounded_number_type" not in notes
+
+    def test_workflow_notes_oracle_to_snowflake(self):
+        notes = " ".join(suggest_workflow("oracle", "s3", "snowflake")["notes"])
+        assert '"use_adbc": true' in notes
+        assert "--unbounded_number_type" in notes
+
+    def test_workflow_notes_oracle_without_snowflake(self):
+        notes = " ".join(suggest_workflow("oracle", "s3", "glue")["notes"])
+        assert '"use_adbc": true' in notes
+        assert "unbounded_number_type" not in notes
+
+
 class TestHelperFunctions:
     """Tests for helper functions."""
 

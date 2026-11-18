@@ -149,6 +149,8 @@ class CommandBuilder(BaseCommandBuilder):
             "supports_resume": caps.supports_resume,
             "supports_license": caps.supports_license,
             "supports_env_name": caps.supports_env_name,
+            "requires_license": caps.requires_license,
+            "supports_unbounded_number_type": caps.supports_unbounded_number_type,
         }
 
     def _build_global_options(self, params) -> List[str]:
@@ -166,6 +168,8 @@ class CommandBuilder(BaseCommandBuilder):
             args.append("--no_banner")
         if getattr(params, "license", None):
             args.extend(["--license", params.license])
+        if getattr(params, "license_file", None):
+            args.extend(["--license_file", params.license_file])
         return args
 
     def _build_common_options(self, params) -> List[str]:
@@ -181,6 +185,8 @@ class CommandBuilder(BaseCommandBuilder):
             args.append("--no_banner")
         if getattr(params, "license", None):
             args.extend(["--license", params.license])
+        if getattr(params, "license_file", None):
+            args.extend(["--license_file", params.license_file])
         # NOTE: --env_name is NOT a valid flag for sync/sync[export]/sync[publish]/run.
         # The real lxpress CLI defines --env_name only on `config create` and
         # `config list` (verified against LakeXpress 0.3.5 --help and cli.py source:
@@ -320,6 +326,10 @@ class CommandBuilder(BaseCommandBuilder):
             cmd.append("--no_views")
         if params.pk_constraints:
             cmd.append("--pk_constraints")
+        if params.unbounded_number_type:
+            cmd.extend(
+                ["--unbounded_number_type", params.unbounded_number_type.value]
+            )
         if params.generate_metadata:
             cmd.append("--generate_metadata")
         if params.manifest_name:
@@ -456,6 +466,12 @@ def get_supported_capabilities() -> Dict[str, Any]:
             "MariaDB (mariadb)",
             "SAP HANA (saphana)",
             "Teradata (teradata, 0.4.0+)",
+        ],
+        "Source Extraction (0.6.3+)": [
+            "SQL Server, PostgreSQL, Teradata: FastBCP ADBC driver by default; "
+            '"use_adbc": false on the source entry of the credentials file selects the native driver',
+            'Oracle: native driver by default; "use_adbc": true selects ADBC (recommended when publishing to Snowflake)',
+            "MySQL, MariaDB, SAP HANA: native driver only",
         ],
         "Log Databases": [
             "SQL Server (sqlserver)",
@@ -601,11 +617,46 @@ def suggest_workflow(
         }
     )
 
+    # Version notes that change what the user must prepare (0.6.0+)
+    notes = [
+        "LakeXpress 0.6.0+ needs a license file, also for the free 30-day trial "
+        "(exit code 13 without one). It is read from LAKEXPRESS_LICENSE, "
+        "--license, --license_file, ~/.lakexpress/license.lic (Linux), "
+        "%APPDATA%\\LakeXpress\\license.lic (Windows) or ./license.lic. The same "
+        "file licenses the FastBCP bundled in engine/."
+    ]
+    source = source_type.lower()
+    if source in ("sqlserver", "postgresql", "teradata"):
+        notes.append(
+            "LakeXpress 0.6.3+ extracts this source through FastBCP's ADBC driver "
+            'by default. Set "use_adbc": false on the source entry of the '
+            "credentials file (next to ds_type) to use the native driver. Some "
+            "Parquet types differ between the two (time-zone-aware timestamps "
+            "are UTC and microseconds are kept through ADBC)."
+        )
+    elif source == "oracle":
+        note = (
+            'Oracle is extracted with the native driver unless "use_adbc": true '
+            "is set on the source entry of the credentials file (next to ds_type)."
+        )
+        if (publish_target or "").lower() == "snowflake":
+            note += (
+                " For Snowflake, ADBC is recommended (0.6.5+): the native driver "
+                "truncates TIMESTAMP to milliseconds and writes TIMESTAMP WITH "
+                "TIME ZONE as text. A NUMBER declared without precision is "
+                "published as NUMBER(38,18), rounded beyond the 18th decimal "
+                "place; config create --unbounded_number_type varchar keeps every "
+                "digit, and decimal_strict fails the export on a value that does "
+                "not fit (needs ADBC)."
+            )
+        notes.append(note)
+
     return {
         "source_type": source_type,
         "destination": destination,
         "publish_target": publish_target,
         "steps": steps,
+        "notes": notes,
         "parallelism_note": (
             "To configure parallelism in LakeXpress, use config create parameters: "
             "--fastbcp_p <degree> for global parallelism, or "

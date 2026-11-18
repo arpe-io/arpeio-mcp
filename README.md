@@ -234,7 +234,7 @@ Read-only advisory tools were consolidated into one `*_info` tool per product (w
 
 ### LakeXpress (3 tools)
 - `lakexpress_info` — Read-only advisory: `action="capabilities" | "workflow" | "version"`
-- `lakexpress_preview_command` — Build any LakeXpress command (`lxdb_*`, `config_*`, `sync`, `sync[export]`, `sync[publish]`, `run`, `status`, `cleanup`). On v0.4.0+ binaries, warns when `-a` / `--lxdb_auth_id` / `--sync_id` are missing on sync-family calls
+- `lakexpress_preview_command` — Build any LakeXpress command (`lxdb_*`, `config_*`, `sync`, `sync[export]`, `sync[publish]`, `run`, `status`, `cleanup`). On v0.4.0+ binaries, warns when `-a` / `--lxdb_auth_id` / `--sync_id` are missing on sync-family calls. Supports LakeXpress up to 0.6.5 (`unbounded_number_type`, `license_file`)
 - `lakexpress_execute_command` — Run the command
 
 ### MigratorXpress (4 tools)

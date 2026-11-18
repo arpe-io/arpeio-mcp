@@ -360,7 +360,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                             },
                             "license": {
                                 "type": "string",
-                                "description": "Path to license file (0.3.0+)",
+                                "description": "License text, passed with --license (0.3.0+). For a license file, use license_file",
+                            },
+                            "license_file": {
+                                "type": "string",
+                                "description": "Path to the license file, passed with --license_file. LakeXpress 0.6.0+ needs a license; without license or license_file it looks in LAKEXPRESS_LICENSE, ~/.lakexpress/license.lic, %APPDATA%\\LakeXpress\\license.lic and ./license.lic",
                             },
                         },
                         "required": ["auth_file", "log_db_auth_id"],
@@ -399,7 +403,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                             },
                             "license": {
                                 "type": "string",
-                                "description": "Path to license file (0.3.0+)",
+                                "description": "License text, passed with --license (0.3.0+). For a license file, use license_file",
+                            },
+                            "license_file": {
+                                "type": "string",
+                                "description": "Path to the license file, passed with --license_file. LakeXpress 0.6.0+ needs a license; without license or license_file it looks in LAKEXPRESS_LICENSE, ~/.lakexpress/license.lic, %APPDATA%\\LakeXpress\\license.lic and ./license.lic",
                             },
                         },
                         "required": ["auth_file", "log_db_auth_id"],
@@ -442,7 +450,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                             },
                             "license": {
                                 "type": "string",
-                                "description": "Path to license file (0.3.0+)",
+                                "description": "License text, passed with --license (0.3.0+). For a license file, use license_file",
+                            },
+                            "license_file": {
+                                "type": "string",
+                                "description": "Path to the license file, passed with --license_file. LakeXpress 0.6.0+ needs a license; without license or license_file it looks in LAKEXPRESS_LICENSE, ~/.lakexpress/license.lic, %APPDATA%\\LakeXpress\\license.lic and ./license.lic",
                             },
                         },
                         "required": ["auth_file", "log_db_auth_id"],
@@ -484,7 +496,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                             },
                             "license": {
                                 "type": "string",
-                                "description": "Path to license file (0.3.0+)",
+                                "description": "License text, passed with --license (0.3.0+). For a license file, use license_file",
+                            },
+                            "license_file": {
+                                "type": "string",
+                                "description": "Path to the license file, passed with --license_file. LakeXpress 0.6.0+ needs a license; without license or license_file it looks in LAKEXPRESS_LICENSE, ~/.lakexpress/license.lic, %APPDATA%\\LakeXpress\\license.lic and ./license.lic",
                             },
                         },
                         "required": ["auth_file", "log_db_auth_id"],
@@ -531,7 +547,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                             },
                             "license": {
                                 "type": "string",
-                                "description": "Path to license file (0.3.0+)",
+                                "description": "License text, passed with --license (0.3.0+). For a license file, use license_file",
+                            },
+                            "license_file": {
+                                "type": "string",
+                                "description": "Path to the license file, passed with --license_file. LakeXpress 0.6.0+ needs a license; without license or license_file it looks in LAKEXPRESS_LICENSE, ~/.lakexpress/license.lic, %APPDATA%\\LakeXpress\\license.lic and ./license.lic",
                             },
                         },
                         "required": ["auth_file", "log_db_auth_id"],
@@ -657,6 +677,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                                 "default": False,
                                 "description": "Enable primary key constraints when publishing",
                             },
+                            "unbounded_number_type": {
+                                "type": "string",
+                                "enum": ["decimal", "varchar", "decimal_strict"],
+                                "description": "Oracle source published to Snowflake (0.6.5+): type of a NUMBER declared without precision. decimal (default): NUMBER(38,18), digits beyond the 18th decimal place are rounded. varchar: VARCHAR, every digit kept (exact with \"use_adbc\": true on the source). decimal_strict: NUMBER(38,18), the export fails on a value that does not fit; needs \"use_adbc\": true. varchar and decimal_strict need a Snowflake publish_target",
+                            },
                             "generate_metadata": {
                                 "type": "boolean",
                                 "default": False,
@@ -700,7 +725,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                             },
                             "license": {
                                 "type": "string",
-                                "description": "Path to license file (0.3.0+)",
+                                "description": "License text, passed with --license (0.3.0+). For a license file, use license_file",
+                            },
+                            "license_file": {
+                                "type": "string",
+                                "description": "Path to the license file, passed with --license_file. LakeXpress 0.6.0+ needs a license; without license or license_file it looks in LAKEXPRESS_LICENSE, ~/.lakexpress/license.lic, %APPDATA%\\LakeXpress\\license.lic and ./license.lic",
                             },
                         },
                         "required": [
@@ -837,7 +866,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                             },
                             "license": {
                                 "type": "string",
-                                "description": "Path to license file (0.3.0+)",
+                                "description": "License text, passed with --license (0.3.0+). For a license file, use license_file",
+                            },
+                            "license_file": {
+                                "type": "string",
+                                "description": "Path to the license file, passed with --license_file. LakeXpress 0.6.0+ needs a license; without license or license_file it looks in LAKEXPRESS_LICENSE, ~/.lakexpress/license.lic, %APPDATA%\\LakeXpress\\license.lic and ./license.lic",
                             },
                             "env_name": {
                                 "type": "string",
@@ -887,7 +920,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                             },
                             "license": {
                                 "type": "string",
-                                "description": "Path to license file (0.3.0+)",
+                                "description": "License text, passed with --license (0.3.0+). For a license file, use license_file",
+                            },
+                            "license_file": {
+                                "type": "string",
+                                "description": "Path to the license file, passed with --license_file. LakeXpress 0.6.0+ needs a license; without license or license_file it looks in LAKEXPRESS_LICENSE, ~/.lakexpress/license.lic, %APPDATA%\\LakeXpress\\license.lic and ./license.lic",
                             },
                             "env_name": {
                                 "type": "string",
@@ -932,7 +969,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                             },
                             "license": {
                                 "type": "string",
-                                "description": "Path to license file (0.3.0+)",
+                                "description": "License text, passed with --license (0.3.0+). For a license file, use license_file",
+                            },
+                            "license_file": {
+                                "type": "string",
+                                "description": "Path to the license file, passed with --license_file. LakeXpress 0.6.0+ needs a license; without license or license_file it looks in LAKEXPRESS_LICENSE, ~/.lakexpress/license.lic, %APPDATA%\\LakeXpress\\license.lic and ./license.lic",
                             },
                             "env_name": {
                                 "type": "string",
@@ -977,7 +1018,11 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                             },
                             "license": {
                                 "type": "string",
-                                "description": "Path to license file (0.3.0+)",
+                                "description": "License text, passed with --license (0.3.0+). For a license file, use license_file",
+                            },
+                            "license_file": {
+                                "type": "string",
+                                "description": "Path to the license file, passed with --license_file. LakeXpress 0.6.0+ needs a license; without license or license_file it looks in LAKEXPRESS_LICENSE, ~/.lakexpress/license.lic, %APPDATA%\\LakeXpress\\license.lic and ./license.lic",
                             },
                             "env_name": {
                                 "type": "string",
@@ -1434,6 +1479,13 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             response.append(f"- {db}")
         response.append("")
 
+        # Source extraction path (ADBC or native)
+        response.append("## Source Extraction (0.6.3+)")
+        response.append("")
+        for line in caps["Source Extraction (0.6.3+)"]:
+            response.append(f"- {line}")
+        response.append("")
+
         # Log databases
         response.append("## Log Databases")
         response.append("")
@@ -1499,6 +1551,12 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             response.append(step["example"])
             response.append("```")
             response.append("")
+
+        response.append("## Notes:")
+        response.append("")
+        for note in workflow["notes"]:
+            response.append(f"- {note}")
+        response.append("")
 
         return [TextContent(type="text", text="\n".join(response))]
 
@@ -1567,6 +1625,8 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             f"- Resume: {'Yes' if caps['supports_resume'] else 'No'}",
             f"- License: {'Yes' if caps['supports_license'] else 'No'}",
             f"- Env Name: {'Yes' if caps['supports_env_name'] else 'No'}",
+            f"- License Required: {'Yes' if caps['requires_license'] else 'No'}",
+            f"- Unbounded Number Type: {'Yes' if caps['supports_unbounded_number_type'] else 'No'}",
         ]
 
         return [TextContent(type="text", text="\n".join(response))]
@@ -1664,6 +1724,15 @@ def _build_command_explanation(request: LakeXpressRequest) -> str:
             if p.incremental_table:
                 parts.append(
                     f"Incremental tables configured: {len(p.incremental_table)}"
+                )
+            if p.unbounded_number_type:
+                parts.append(
+                    "Oracle NUMBER without precision published to Snowflake as: "
+                    + {
+                        "decimal": "NUMBER(38,18), rounded beyond the 18th decimal place",
+                        "varchar": "VARCHAR, every digit kept",
+                        "decimal_strict": "NUMBER(38,18), the export fails on a value that does not fit",
+                    }[p.unbounded_number_type.value]
                 )
 
     elif cmd == CommandType.CONFIG_DELETE:

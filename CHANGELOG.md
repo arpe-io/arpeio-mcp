@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.11] - 2026-11-16
+
+### Added
+
+- **LakeXpress 0.5.0 and 0.6.0 to 0.6.5 support**: new registry entries. The sources, storage backends, publish targets and commands are those of 0.4.10.
+  - New `unbounded_number_type` option on `config_create` (0.6.5+) builds `--unbounded_number_type {decimal,varchar,decimal_strict}`: the Snowflake type of an Oracle `NUMBER` declared without precision. `varchar` and `decimal_strict` are refused without a `publish_target`, as LakeXpress stops such a sync with exit code 10. A version-compatibility warning is raised against a binary older than 0.6.5.
+  - New `license_file` option on every command builds `--license_file <path>`. LakeXpress 0.6.0+ does not run without a license file.
+  - `lakexpress_info` reports two new feature flags with `action="version"` (license required, unbounded number type), the extraction path of each source (ADBC or native) with `action="capabilities"`, and notes on the license, ADBC extraction and Oracle to Snowflake with `action="workflow"`.
+  - The server instructions gain a "LakeXpress 0.6 notes" section: license, exit codes 41 and 44 to 47, ADBC extraction, Oracle to Snowflake.
+
+### Fixed
+
+- **LakeXpress `license` was described as a path** but is emitted as `--license`, which takes the license text. The description now says so, and a path goes in the new `license_file`.
+- **LakeXpress doc search** crawled doc versions that are no longer published (0.2, 0.4). The site publishes 0.3 and 0.6, the latter at `/latest/`.
+
 ## [0.3.10] - 2026-11-13
 
 ### Added

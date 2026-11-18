@@ -99,6 +99,14 @@ class CompressionType(str, Enum):
     NONE = "None"
 
 
+class UnboundedNumberType(str, Enum):
+    """Snowflake type of an Oracle NUMBER declared without precision (0.6.5+)."""
+
+    DECIMAL = "decimal"
+    VARCHAR = "varchar"
+    DECIMAL_STRICT = "decimal_strict"
+
+
 class ErrorAction(str, Enum):
     """Error action on failure."""
 
@@ -135,7 +143,16 @@ class GlobalOptions(BaseModel):
     log_dir: Optional[str] = Field(None, description="Directory for log files")
     no_progress: bool = Field(False, description="Disable progress bar display")
     no_banner: bool = Field(False, description="Suppress the startup banner")
-    license: Optional[str] = Field(None, description="Path to license file (0.3.0+)")
+    license: Optional[str] = Field(
+        None,
+        description=(
+            "License text, passed with --license (0.3.0+). For a license file, "
+            "use license_file"
+        ),
+    )
+    license_file: Optional[str] = Field(
+        None, description="Path to the license file, passed with --license_file"
+    )
 
 
 class LogdbInitParams(GlobalOptions):
@@ -270,6 +287,16 @@ class ConfigCreateParams(GlobalOptions):
     pk_constraints: bool = Field(
         False, description="Enable primary key constraints when publishing"
     )
+    unbounded_number_type: Optional[UnboundedNumberType] = Field(
+        None,
+        description=(
+            "Oracle source published to Snowflake (0.6.5+): type of a NUMBER "
+            "declared without precision. decimal (default): NUMBER(38,18), digits "
+            "beyond the 18th decimal place are rounded. varchar: VARCHAR, every "
+            "digit kept. decimal_strict: NUMBER(38,18), the export fails on a "
+            'value that does not fit; needs "use_adbc": true on the source.'
+        ),
+    )
     generate_metadata: bool = Field(False, description="Generate CDM metadata files")
     manifest_name: Optional[str] = Field(None, description="Manifest file name")
 
@@ -303,6 +330,21 @@ class ConfigCreateParams(GlobalOptions):
         """Validate publish_method requires publish_target."""
         if self.publish_method and not self.publish_target:
             raise ValueError("publish_method requires publish_target to be set.")
+        return self
+
+    @model_validator(mode="after")
+    def validate_unbounded_number_type_requires_target(self):
+        """varchar and decimal_strict only apply to a Snowflake publish target."""
+        if (
+            self.unbounded_number_type
+            and self.unbounded_number_type != UnboundedNumberType.DECIMAL
+            and not self.publish_target
+        ):
+            raise ValueError(
+                f"unbounded_number_type {self.unbounded_number_type.value} requires "
+                "publish_target to be a Snowflake entry: LakeXpress stops the sync "
+                "with exit code 10 otherwise."
+            )
         return self
 
 
@@ -343,7 +385,16 @@ class SyncParams(BaseModel):
     no_progress: bool = Field(False, description="Disable progress bar display")
     no_banner: bool = Field(False, description="Suppress the startup banner")
     quiet_fbcp: bool = Field(False, description="Suppress FastBCP output")
-    license: Optional[str] = Field(None, description="Path to license file (0.3.0+)")
+    license: Optional[str] = Field(
+        None,
+        description=(
+            "License text, passed with --license (0.3.0+). For a license file, "
+            "use license_file"
+        ),
+    )
+    license_file: Optional[str] = Field(
+        None, description="Path to the license file, passed with --license_file"
+    )
     env_name: Optional[str] = Field(
         None, description="Environment name for configuration isolation (0.3.0+)"
     )
@@ -369,7 +420,16 @@ class SyncExportParams(BaseModel):
     no_progress: bool = Field(False, description="Disable progress bar display")
     no_banner: bool = Field(False, description="Suppress the startup banner")
     quiet_fbcp: bool = Field(False, description="Suppress FastBCP output")
-    license: Optional[str] = Field(None, description="Path to license file (0.3.0+)")
+    license: Optional[str] = Field(
+        None,
+        description=(
+            "License text, passed with --license (0.3.0+). For a license file, "
+            "use license_file"
+        ),
+    )
+    license_file: Optional[str] = Field(
+        None, description="Path to the license file, passed with --license_file"
+    )
     env_name: Optional[str] = Field(
         None, description="Environment name for configuration isolation (0.3.0+)"
     )
@@ -392,7 +452,16 @@ class SyncPublishParams(BaseModel):
     log_dir: Optional[str] = Field(None, description="Directory for log files")
     no_progress: bool = Field(False, description="Disable progress bar display")
     no_banner: bool = Field(False, description="Suppress the startup banner")
-    license: Optional[str] = Field(None, description="Path to license file (0.3.0+)")
+    license: Optional[str] = Field(
+        None,
+        description=(
+            "License text, passed with --license (0.3.0+). For a license file, "
+            "use license_file"
+        ),
+    )
+    license_file: Optional[str] = Field(
+        None, description="Path to the license file, passed with --license_file"
+    )
     env_name: Optional[str] = Field(
         None, description="Environment name for configuration isolation (0.3.0+)"
     )
@@ -412,7 +481,16 @@ class RunParams(BaseModel):
     log_dir: Optional[str] = Field(None, description="Directory for log files")
     no_progress: bool = Field(False, description="Disable progress bar display")
     no_banner: bool = Field(False, description="Suppress the startup banner")
-    license: Optional[str] = Field(None, description="Path to license file (0.3.0+)")
+    license: Optional[str] = Field(
+        None,
+        description=(
+            "License text, passed with --license (0.3.0+). For a license file, "
+            "use license_file"
+        ),
+    )
+    license_file: Optional[str] = Field(
+        None, description="Path to the license file, passed with --license_file"
+    )
     env_name: Optional[str] = Field(
         None, description="Environment name for configuration isolation (0.3.0+)"
     )
