@@ -152,7 +152,7 @@ class TestInitializeTargets:
     @pytest.mark.asyncio
     async def test_other_products_unscoped(self, monkeypatch, tmp_path):
         targets = await self._crawl_targets(monkeypatch, tmp_path, None)
-        assert targets["fastbcp"] == ("fastbcp", "https://fastbcp-docs.arpe.io/latest/sitemap", "1.4", None)
+        assert targets["fastbcp"] == ("fastbcp", "https://fastbcp-docs.arpe.io/latest/sitemap", "1.7", None)
         assert targets["adbc"][1] == "https://adbc-drivers-docs.arpe.io/sitemap.xml"
         assert targets["adbc"][3] is None
         assert targets["blog"][3] is None

@@ -12,7 +12,7 @@ from src.adbc.drivers import (
 from src.adbc.tools import create_tools
 from src.base.release_notes_handler import build_release_notes_tool
 from src.doc_search.index import SearchEngine
-from src.fastbcp.validators import ADBC_NATIVE_TYPES
+from src.fastbcp.validators import ADBC_TYPES
 from src.fastbcp.version import ADBC_MIN_VERSIONS
 
 
@@ -34,7 +34,7 @@ class TestRegistry:
 
     def test_every_fastbcp_adbc_type_has_a_driver(self):
         """FastBCP's adbc_* types and the driver registry must stay in step."""
-        for source_type in ADBC_NATIVE_TYPES:
+        for source_type in ADBC_TYPES:
             drv = driver_for_fastbcp_type(source_type)
             assert drv is not None, source_type
             assert ADBC_MIN_VERSIONS[source_type].startswith(drv.fastbcp_min_version + ".")
@@ -53,8 +53,11 @@ class TestRegistry:
     def test_find_driver_db2(self):
         drv = find_driver("ArpeDb2")
         assert drv is ADBC_DRIVERS["arpedb2"]
-        assert drv.fastbcp_type is None
+        assert drv.fastbcp_type == "adbc_db2"
+        assert drv.fastbcp_min_version == "1.7"
         assert drv.docs_url.endswith("/drivers/arpedb2/")
+        assert find_driver("adbc_db2") is drv
+        assert driver_for_fastbcp_type("adbc_db2") is drv
 
     def test_capabilities(self):
         caps = get_supported_capabilities()
@@ -94,6 +97,8 @@ class TestAdbcInfoTool:
         content, structured = await self.handler("adbc_info", {"driver": "ArpeDb2"})
         assert structured["status"] == "ok"
         assert "arpedb2" in content[0].text
+        assert "`adbc_db2` (FastBCP 1.7+)" in content[0].text
+        assert structured["drivers"][0]["fastbcp_type"] == "adbc_db2"
 
     @pytest.mark.asyncio
     async def test_unknown_driver(self):
