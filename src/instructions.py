@@ -154,11 +154,13 @@ without one every command except `--help` and `--version` exits 13. LakeXpress \
 reads it from `LAKEXPRESS_LICENSE`, `--license` (text), `--license_file` (path), \
 `~/.lakexpress/license.lic`, `%APPDATA%\\LakeXpress\\license.lic` or \
 `./license.lic`. Pass a path with `license_file`, not `license`. The same file \
-licenses the FastBCP bundled in `engine/` (1.6.8 in LakeXpress 0.6.5 to 0.6.8).
+licenses the FastBCP bundled in `engine/` (1.6.8 in LakeXpress 0.6.5 to 0.6.9).
 - **Exit codes** (0.6.2+): 40 some tables failed (resume), 41 every table \
 failed, 44 no table matched, 45 no run to resume or publish, 46 publishing \
 failed, 47 export and publishing both had failures, 34 FastBCP older than 1.4.0. \
-From 0.6.8, 43 when the export job of a table cannot be created.
+From 0.6.8, 43 when the export job of a table cannot be created. Before 0.6.9, \
+a run of more than 100 tables with `n_jobs` above 1 exports every table but \
+reports those beyond 100 as failed and exits 40: upgrade to 0.6.9.
 - **ADBC extraction** (0.6.3+) is the default for SQL Server, PostgreSQL and \
 Teradata sources; Oracle uses it only on request. It is set in the credentials \
 file, not on the command line: `"use_adbc": true` or `false` next to `ds_type` \
@@ -168,6 +170,26 @@ use `unbounded_number_type` on `config_create` for `NUMBER` columns without \
 precision: `decimal` (default, `NUMBER(38,18)`, rounded beyond 18 decimal \
 places), `varchar` (every digit kept) or `decimal_strict` (the export fails on a \
 value that does not fit; needs ADBC).
+- **Oracle source, large tables**: a table above `large_table_threshold` is \
+split with `Rowid`, which needs `SELECT_CATALOG_ROLE` on the source user: \
+FastBCP reads the extents of the table from `DBA_EXTENTS`, `DBA_SEGMENTS` and \
+`DBA_OBJECTS` to build the `ROWID` ranges (`SELECT` on these three views is \
+enough). Without it the table fails with "The user must have \
+SELECT_CATALOG_ROLE" (`ORA-00942`). To do without the role, set \
+`fastbcp_table_config` to `SCHEMA.TABLE:None::1` or to a key-based method. \
+Tables below the threshold and syncs with `fastbcp_p` 1 do not need the role. \
+Up to 0.6.8 an incremental table is read by a single thread unless a key-based \
+method is set, and does not need the role; 0.6.9+ splits it with `Rowid` like \
+a full export, so an incremental sync that worked without the role fails on \
+its large tables after the upgrade: grant the role or set `None::1` first.
+- **Large incremental tables** (0.6.9+): a table above \
+`large_table_threshold` set with `incremental_table` is split between the \
+`fastbcp_p` threads like a full export (`Ctid` on PostgreSQL, `Physloc` on \
+SQL Server, `Rowid` on Oracle), for the baseline and for the increments. Up \
+to 0.6.8 it is read by a single thread unless a key-based method is set. A \
+run of such a table holds one file per thread, and some can be empty. Set \
+`fastbcp_table_config` to `SCHEMA.TABLE:None::1` to keep a single thread for \
+a table.
 - **Snowflake time zone** (0.6.6+): every Snowflake session is opened with \
 `TIMEZONE = 'UTC'`, so timestamps without a time zone keep the source wall \
 clock. Tables loaded by an earlier version keep their shifted values until \

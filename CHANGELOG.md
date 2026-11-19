@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **LakeXpress 0.6.9 support**: new registry entry, with no option change. The README says "up to 0.6.9".
+  - A large table set with `incremental_table` is split between the `fastbcp_p` threads from 0.6.9, like a full export (`Ctid` on PostgreSQL, `Physloc` on SQL Server, `Rowid` on Oracle); up to 0.6.8 it is read by a single thread. `lakexpress_info` with `action="workflow"` says so for these three sources, and the "LakeXpress 0.6 notes" of the server instructions gain a "Large incremental tables" entry: one file per thread, and `SCHEMA.TABLE:None::1` in `fastbcp_table_config` to keep a single thread.
+  - The exit codes of the server instructions say that before 0.6.9 a run of more than 100 tables with `n_jobs` above 1 exports every table but reports those beyond 100 as failed, with exit code 40.
+- **LakeXpress, Oracle source**: `lakexpress_info` with `action="workflow"` and the "LakeXpress 0.6 notes" of the server instructions say that the `Rowid` split of a large Oracle table needs `SELECT_CATALOG_ROLE` (FastBCP reads `DBA_EXTENTS`, `DBA_SEGMENTS` and `DBA_OBJECTS` to build the `ROWID` ranges), what the error looks like without it, and how to do without the role (`SCHEMA.TABLE:None::1` or a key-based method in `fastbcp_table_config`). Tables below `large_table_threshold` and syncs with `fastbcp_p` 1 do not need it. Up to LakeXpress 0.6.8 an incremental table is read by a single thread and does not need the role; 0.6.9+ splits it like a full export, so an incremental sync that worked without the role fails on its large tables after the upgrade.
+
 ## [0.3.13] - 2026-11-19
 
 ### Changed

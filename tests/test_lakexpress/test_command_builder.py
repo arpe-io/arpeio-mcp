@@ -714,6 +714,38 @@ class TestLakeXpress065:
         assert '"use_adbc": true' in notes
         assert "unbounded_number_type" not in notes
 
+    def test_workflow_notes_oracle_needs_catalog_role_for_rowid(self):
+        notes = " ".join(suggest_workflow("oracle", "s3")["notes"])
+        assert "SELECT_CATALOG_ROLE" in notes
+        assert "DBA_EXTENTS" in notes
+        assert "None::1" in notes
+        # 0.6.9 splits a large incremental table too: the role is then needed
+        assert "0.6.9+ splits it with Rowid" in notes
+        assert "--fastbcp_p 1 do not need the role" in notes
+        assert "later versions" not in notes
+
+    def test_workflow_notes_catalog_role_only_for_oracle(self):
+        notes = " ".join(suggest_workflow("postgresql", "s3")["notes"])
+        assert "SELECT_CATALOG_ROLE" not in notes
+
+    @pytest.mark.parametrize(
+        "source,method",
+        [("postgresql", "Ctid"), ("sqlserver", "Physloc"), ("oracle", "Rowid")],
+    )
+    def test_workflow_notes_large_incremental_split_from_069(self, source, method):
+        notes = suggest_workflow(source, "s3")["notes"]
+        note = next(n for n in notes if "--incremental_table between" in n)
+        assert note.startswith("LakeXpress 0.6.9+")
+        assert f"with the {method} method" in note
+        assert "one file per thread" in note
+        assert "'SCHEMA.TABLE:None::1'" in note
+
+    @pytest.mark.parametrize("source", ["mysql", "mariadb", "saphana", "teradata"])
+    def test_workflow_notes_no_incremental_split_without_row_locator(self, source):
+        """These sources have no physical split method: nothing changes in 0.6.9."""
+        notes = " ".join(suggest_workflow(source, "s3")["notes"])
+        assert "--incremental_table between" not in notes
+
 
 class TestHelperFunctions:
     """Tests for helper functions."""

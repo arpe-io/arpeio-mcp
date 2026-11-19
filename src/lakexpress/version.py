@@ -1129,8 +1129,12 @@ VERSION_REGISTRY["0.6.5"] = replace(
 # 0.6.8: incremental watermark moved at publish, not at export, for a sync with
 #        a publish target; Snowflake incremental fixes (append, upsert,
 #        delete_insert); exit code 43 when an export job cannot be created.
+# 0.6.9: a large table set with --incremental_table is split between the
+#        FastBCP threads like a full export (Ctid, Rowid, Physloc), so on
+#        Oracle it now needs SELECT_CATALOG_ROLE; a run of more than 100
+#        tables with --n_jobs > 1 no longer reports exported tables as failed.
 # No CLI surface change in any of them; FastBCP 1.6.8 still bundled.
-for _version in ("0.6.6", "0.6.7", "0.6.8"):
+for _version in ("0.6.6", "0.6.7", "0.6.8", "0.6.9"):
     VERSION_REGISTRY[_version] = replace(VERSION_REGISTRY["0.6.5"])
 
 

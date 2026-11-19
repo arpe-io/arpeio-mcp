@@ -520,6 +520,16 @@ def get_supported_capabilities() -> Dict[str, Any]:
     }
 
 
+# FastBCP method LakeXpress picks to split a table above --large_table_threshold
+# (the other sources are read by a single thread unless --fastbcp_table_config
+# sets a key-based method)
+_PHYSICAL_SPLIT_METHODS = {
+    "postgresql": "Ctid",
+    "sqlserver": "Physloc",
+    "oracle": "Rowid",
+}
+
+
 def suggest_workflow(
     source_type: str,
     destination: str,
@@ -650,6 +660,36 @@ def suggest_workflow(
                 "not fit (needs ADBC)."
             )
         notes.append(note)
+        notes.append(
+            "Oracle: a table above --large_table_threshold is split between "
+            "--fastbcp_p threads with the Rowid method, which needs "
+            "SELECT_CATALOG_ROLE on the source user: FastBCP reads the extents "
+            "of the table from DBA_EXTENTS, DBA_SEGMENTS and DBA_OBJECTS to "
+            "build the ROWID ranges (SELECT on these three views is enough). "
+            "Without it the table fails with 'The user must have "
+            "SELECT_CATALOG_ROLE' (ORA-00942). To do without the role, set "
+            "--fastbcp_table_config 'SCHEMA.TABLE:None::1' (single thread) or "
+            "a key-based method such as Ntile. Tables below the threshold and "
+            "syncs with --fastbcp_p 1 do not need the role. Up to LakeXpress "
+            "0.6.8 an incremental table (--incremental_table) is always read "
+            "by a single thread unless a key-based method is set, so it does "
+            "not need the role; LakeXpress 0.6.9+ splits it with Rowid like a "
+            "full export, and it then needs the role too: an incremental sync "
+            "that worked without the role fails on its large tables after the "
+            "upgrade, so grant the role or set None::1 for these tables first."
+        )
+    if source in _PHYSICAL_SPLIT_METHODS:
+        notes.append(
+            "LakeXpress 0.6.9+ splits a table above --large_table_threshold "
+            "set with --incremental_table between the --fastbcp_p threads, "
+            f"with the {_PHYSICAL_SPLIT_METHODS[source]} method, like a "
+            "full export of that table, for the baseline and for the "
+            "increments (up to 0.6.8 it is read by a single thread unless a "
+            "key-based method is set). A run of such a table holds one file "
+            "per thread, and some can be empty. "
+            "To keep a single thread for a table, set --fastbcp_table_config "
+            "'SCHEMA.TABLE:None::1'."
+        )
     if (publish_target or "").lower() == "snowflake":
         notes.append(
             "LakeXpress 0.6.6+ opens every Snowflake session with TIMEZONE = 'UTC', "

@@ -608,10 +608,10 @@ class TestRegistry050To065:
         assert warnings == []
 
 
-class TestRegistry066To068:
-    """Registry entries for LakeXpress 0.6.6 - 0.6.8 (no CLI surface change)."""
+class TestRegistry066To069:
+    """Registry entries for LakeXpress 0.6.6 - 0.6.9 (no CLI surface change)."""
 
-    RELEASED = ["0.6.6", "0.6.7", "0.6.8"]
+    RELEASED = ["0.6.6", "0.6.7", "0.6.8", "0.6.9"]
 
     @pytest.mark.parametrize("version", RELEASED)
     def test_same_capabilities_as_065(self, version):
@@ -620,9 +620,9 @@ class TestRegistry066To068:
         assert VERSION_REGISTRY[version].supports_unbounded_number_type is True
 
     @patch("src.base.version_detector.subprocess.run")
-    def test_068_is_latest_known(self, mock_run):
+    def test_069_is_latest_known(self, mock_run):
         mock_result = Mock()
-        mock_result.stdout = "LakeXpress 0.6.8 (build 2026-11-18T12:00:00Z)\n"
+        mock_result.stdout = "LakeXpress 0.6.9 (build 2026-11-19T12:00:00Z)\n"
         mock_result.stderr = ""
         mock_run.return_value = mock_result
 
@@ -632,9 +632,9 @@ class TestRegistry066To068:
             r"LakeXpress\s+(\d+\.\d+\.\d+)",
             "LakeXpress",
         )
-        assert detector.detect() == ToolVersion(parts=(0, 6, 8))
-        assert detector._sorted_versions[-1][0] == ToolVersion(parts=(0, 6, 8))
-        assert detector.capabilities is VERSION_REGISTRY["0.6.8"]
+        assert detector.detect() == ToolVersion(parts=(0, 6, 9))
+        assert detector._sorted_versions[-1][0] == ToolVersion(parts=(0, 6, 9))
+        assert detector.capabilities is VERSION_REGISTRY["0.6.9"]
 
 
 class TestLakeXpressDocVersions:
@@ -642,7 +642,7 @@ class TestLakeXpressDocVersions:
 
     @pytest.mark.parametrize(
         "detected,expected",
-        [("0.6.8", "0.6"), ("0.6.5", "0.6"), ("0.3.5", "0.3"), ("0.4.10", "0.6"), (None, "0.6")],
+        [("0.6.9", "0.6"), ("0.6.8", "0.6"), ("0.6.5", "0.6"), ("0.3.5", "0.3"), ("0.4.10", "0.6"), (None, "0.6")],
     )
     def test_best_doc_version(self, detected, expected):
         from src.doc_search.cache import best_version_for
