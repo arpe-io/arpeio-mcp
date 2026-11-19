@@ -51,9 +51,10 @@ class TestSourceConnectionType:
         with pytest.raises(ValueError):
             SourceConnectionType("nzcopy")
 
-    def test_all_16_source_types(self):
-        """Test that there are exactly 16 source types."""
-        assert len(SourceConnectionType) == 16
+    def test_all_22_source_types(self):
+        """16 native source types and the 6 adbc_* types of FastTransfer 1.0."""
+        assert len(SourceConnectionType) == 22
+        assert len([t for t in SourceConnectionType if t.value.startswith("adbc_")]) == 6
 
 
 class TestTargetConnectionType:
@@ -63,9 +64,10 @@ class TestTargetConnectionType:
         """Test that pgsql target type exists."""
         assert TargetConnectionType("pgsql") == TargetConnectionType.POSTGRES
 
-    def test_all_11_target_types(self):
-        """Test that there are exactly 11 target types."""
-        assert len(TargetConnectionType) == 11
+    def test_all_17_target_types(self):
+        """11 native target types and the 6 adbc_* types of FastTransfer 1.0."""
+        assert len(TargetConnectionType) == 17
+        assert len([t for t in TargetConnectionType if t.value.startswith("adbc_")]) == 6
 
 
 class TestLogLevel:
@@ -517,6 +519,7 @@ class TestTransferRequest:
                 "type": "pgsql",
                 "server": "localhost:5432",
                 "database": "sourcedb",
+                "schema": "public",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -565,6 +568,7 @@ class TestTransferRequest:
                 "type": "oraodp",
                 "server": "localhost:1521",
                 "database": "ORCL",
+                "schema": "HR",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -638,6 +642,7 @@ class TestTransferRequest:
                 "type": "mssql",
                 "server": "localhost",
                 "database": "sourcedb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -661,6 +666,7 @@ class TestTransferRequest:
                 "type": "msoledbsql",
                 "server": "localhost",
                 "database": "sourcedb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",

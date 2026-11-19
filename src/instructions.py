@@ -10,7 +10,8 @@ arpeio-mcp provides four high-performance data tools for database export, \
 transfer, lake pipelines, and cross-platform migration. Each tool wraps a \
 native CLI binary with parallel execution support. It also documents the \
 Arpe ADBC drivers (ArpeMSSQL, ArpePGSQL, ArpeOracle, ArpeNetezza, \
-ArpeTeradata, ArpeDb2), the native drivers behind FastBCP's `adbc_*` connection types.
+ArpeTeradata, ArpeDb2), the native drivers behind the `adbc_*` \
+connection types of FastBCP and FastTransfer.
 
 ## Tool Selection
 
@@ -46,8 +47,8 @@ source database and available key columns:
 | **Random** | No suitable key; approximate distribution via modulo | Yes (numeric) |
 | **NZDataSlice** | Netezza only; uses native data slicing | No |
 | **Timepartition** | FastBCP 0.30+, FastTransfer 0.18+; partitions by time column (FastTransfer key: tuple such as `(date_col,year,month)`) | Yes (datetime) |
-| **DBPartition** | FastBCP 1.3+, FastTransfer 0.18+; one chunk per native table partition (SQL Server, PostgreSQL, Oracle, MySQL, Teradata; FastBCP 1.7+ also Db2 for LUW through `adbc_db2`); needs schema + table | No |
-| **Physical** | FastBCP 1.4+; physical row location, resolved to PhysLoc / Ctid / Rowid / NZDataSlice from the connection type (SQL Server, PostgreSQL, Oracle, Netezza only), and to Pages for the backup types `backup_mssql` / `backup_rman`; needs schema + table | No |
+| **DBPartition** | FastBCP 1.3+, FastTransfer 0.18+; one chunk per native table partition (SQL Server, PostgreSQL, Oracle, MySQL, Teradata; FastBCP 1.7+ and FastTransfer 1.0+ also Db2 for LUW through `adbc_db2`); needs schema + table | No |
+| **Physical** | FastBCP 1.4+, FastTransfer 1.0+; physical row location, resolved to PhysLoc / Ctid / Rowid / NZDataSlice from the connection type (SQL Server, PostgreSQL, Oracle, Netezza only), and in FastBCP to Pages for the backup types `backup_mssql` / `backup_rman`; needs schema + table (not on Netezza in FastTransfer, where a query can also be added to filter the table) | No |
 
 Default recommendations:
 - Numeric primary key exists → **Ntile**
@@ -55,9 +56,9 @@ Default recommendations:
 - SQL Server, no key → **PhysLoc**
 - PostgreSQL, no key → **Ctid**
 - Oracle, no key → **Rowid**
-- FastBCP 1.4+: use **Physical** instead of PhysLoc / Ctid / Rowid / \
-NZDataSlice, which are deprecated in FastBCP (removed in 2.0). FastBCP < 1.4 \
-and FastTransfer keep the engine-specific names.
+- FastBCP 1.4+ and FastTransfer 1.0+: use **Physical** instead of PhysLoc / \
+Ctid / Rowid / NZDataSlice, which are deprecated there (removed in 2.0). \
+FastBCP < 1.4 and FastTransfer < 1.0 only know the engine-specific names.
 - When unsure, call `{product}_info` with action='parallelism' for FastBCP/FastTransfer.
 
 ## --paralleldegree Convention
@@ -219,6 +220,52 @@ always transferred. `with_xid=true` skips a table whose max `ROWID` / \
 `without_xid` is deprecated and ignored from 0.8.0.
 - **Diff** (0.8.2+): a table that could not be compared fails the `diff` step, \
 and the run exits 40 or 41. A table that merely differs does not fail the run.
+
+## FastTransfer 1.0 notes
+
+- **ADBC connection types** (1.0+): `adbc_mssql`, `adbc_pgsql`, `adbc_oracle`, \
+`adbc_netezza`, `adbc_db2` (Db2 for LUW) and `adbc_teradata` are source and \
+target types backed by the Arpe ADBC drivers bundled in FastTransfer \
+(ArpeMSSQL 0.8.2, ArpePGSQL 0.5.4, ArpeOracle 0.4.7, ArpeNetezza 0.3.11, \
+ArpeDb2 0.4.2, ArpeTeradata 0.3.8 in 1.0.0). ADBC is needed on both ends: an \
+`adbc_*` source with an `adbc_*` target, never mixed with a native type (the \
+run is refused before anything is truncated). Windows x64 and Linux x64 only. \
+So Db2 is a target only from an `adbc_*` source, Db2 to a native-only target \
+(MySQL...) goes through `odbc`, and file imports (`duckdbstream`) use a native \
+target.
+- **When to use them**: when the user asks for ADBC, when Db2 is one end and \
+the other end is one of the six engines, or when the table is known to hit a \
+limitation of the native pair (below, e.g. the column types named there). \
+Otherwise keep the native types, and when both ends are ADBC engines and the \
+native pair has a limitation, mention it and the `adbc_*` alternative, which \
+needs the ADBC driver block in the license.
+- **ADBC rules**: the license file must also hold the ARPE ADBC DRIVER block \
+(exit code 99 without it); the target table must exist, and the target schema \
+and table are matched in their exact stored case (`ORDERS` on Oracle, Db2 and \
+Teradata; `orders` on PostgreSQL); `use_work_tables` is refused and \
+`batch_size` has no effect; trusted authentication is not available on \
+Netezza; a `connect_string` is in the driver's vocabulary (`uri=...`), not \
+ADO.NET keywords. Time zone offsets arrive as the same instant in UTC.
+- **Physical** (1.0+) replaces Ctid / Rowid / Physloc / NZDataSlice, which log \
+a deprecation warning. On SQL Server it now requires schema and table (a query \
+alone is refused; a query next to them filters the table) and should only be \
+used on data that is not being written. Through an `odbc` source to SQL Server \
+only the deprecated `Physloc` works.
+- **`use_work_tables`**: before 1.0, with an `msbulk` or `pgcopy` target, the \
+merge fails, nothing is loaded and the exit code is still 0. Do not use it \
+there. From 1.0 a failed merge fails the run.
+- **Ntile / DataDriven**: before 1.0, `Ntile` on a date or timestamp key and \
+`Ntile` / `DataDriven` on a key holding NULLs left rows out without an error; \
+fixed in 1.0. `RangeId` and `Random` never transfer the rows whose key is NULL.
+- **Known limitations in 1.0**: a native `pgcopy` target fed from a source \
+that is not `pgcopy` writes some values wrong without an error (fractional \
+seconds of `time` / `timestamp`, `timestamptz` shifted, `bytea` as text): use \
+`pgcopy` to `pgcopy` or `adbc_*` on both ends for such columns. A native \
+PostgreSQL source into `orabulk` fails on a `date` column: use `adbc_pgsql` \
+to `adbc_oracle`. An Oracle `--query` with `FROM t PARTITION (P1)` now fails \
+at parse time: filter on the partition key instead.
+- **Exit codes**: 99 = no or invalid license (or no ADBC driver block for an \
+`adbc_*` run), 100 = license expired.
 
 ## Parallelism in LakeXpress
 

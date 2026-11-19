@@ -772,29 +772,38 @@ class TestHelperFunctions:
         assert "small" in suggestion["explanation"].lower()
 
     def test_suggest_parallelism_postgresql(self):
-        """Test parallelism suggestion for PostgreSQL source."""
+        """PostgreSQL source: Physical (1.0+), Ctid on an older binary."""
         suggestion = suggest_parallelism_method(
             source_type="pgsql",
             has_numeric_key=False,
             has_identity_column=False,
             table_size_estimate="large",
         )
+        assert suggestion["method"] == "Physical"
+        assert "Ctid" in suggestion["explanation"]
 
+        suggestion = suggest_parallelism_method(
+            "pgsql", False, False, "large", physical_supported=False
+        )
         assert suggestion["method"] == "Ctid"
 
     def test_suggest_parallelism_oraodp(self):
-        """Test parallelism suggestion for oraodp source."""
+        """Oracle source: Physical (1.0+), Rowid on an older binary."""
         suggestion = suggest_parallelism_method(
             source_type="oraodp",
             has_numeric_key=False,
             has_identity_column=False,
             table_size_estimate="medium",
         )
+        assert suggestion["method"] == "Physical"
 
+        suggestion = suggest_parallelism_method(
+            "oraodp", False, False, "medium", physical_supported=False
+        )
         assert suggestion["method"] == "Rowid"
 
     def test_suggest_parallelism_netezza(self):
-        """Test parallelism suggestion for Netezza source types."""
+        """Netezza sources: Physical (1.0+); before, NZDataSlice with nzsql only."""
         for nz_type in ["nzoledb", "nzsql", "nzbulk"]:
             suggestion = suggest_parallelism_method(
                 source_type=nz_type,
@@ -802,29 +811,36 @@ class TestHelperFunctions:
                 has_identity_column=False,
                 table_size_estimate="large",
             )
-            assert suggestion["method"] == "NZDataSlice"
+            assert suggestion["method"] == "Physical"
+        suggestion = suggest_parallelism_method(
+            "nzsql", False, False, "large", physical_supported=False
+        )
+        assert suggestion["method"] == "NZDataSlice"
 
     def test_suggest_parallelism_mssql_no_key(self):
-        """Test parallelism suggestion for SQL Server without numeric key."""
+        """SQL Server without numeric key: Physical (1.0+), Physloc before."""
         suggestion = suggest_parallelism_method(
             source_type="mssql",
             has_numeric_key=False,
             has_identity_column=False,
             table_size_estimate="large",
         )
+        assert suggestion["method"] == "Physical"
 
+        suggestion = suggest_parallelism_method(
+            "mssql", False, False, "large", physical_supported=False
+        )
         assert suggestion["method"] == "Physloc"
 
     def test_suggest_parallelism_msoledbsql_no_key(self):
-        """Test parallelism suggestion for msoledbsql without numeric key."""
+        """msoledbsql without numeric key: Physical, accepted for it from 1.0."""
         suggestion = suggest_parallelism_method(
             source_type="msoledbsql",
             has_numeric_key=False,
             has_identity_column=False,
             table_size_estimate="medium",
         )
-
-        assert suggestion["method"] == "Physloc"
+        assert suggestion["method"] == "Physical"
 
     def test_suggest_parallelism_with_numeric_key(self):
         """Test parallelism suggestion for table with numeric key."""

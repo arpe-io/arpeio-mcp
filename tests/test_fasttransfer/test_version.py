@@ -208,7 +208,7 @@ class TestVersionDetector:
     def test_capabilities_newer_unknown_version(self, mock_run):
         """Test capabilities falls back to latest known for newer unknown version."""
         mock_result = Mock()
-        mock_result.stdout = "FastTransfer Version 1.0.0.0\n"
+        mock_result.stdout = "FastTransfer Version 9.9.0.0\n"
         mock_result.stderr = ""
         mock_run.return_value = mock_result
 
@@ -221,8 +221,8 @@ class TestVersionDetector:
         detector.detect()
         caps = detector.capabilities
 
-        # Should get the latest known capabilities (0.18.2.0)
-        assert caps is VERSION_REGISTRY["0.18.2.0"]
+        # Should get the latest known capabilities (1.0.0.0)
+        assert caps is VERSION_REGISTRY["1.0.0.0"]
 
     @patch("src.base.version_detector.subprocess.run")
     def test_capabilities_undetected_version(self, mock_run):
@@ -239,7 +239,7 @@ class TestVersionDetector:
         caps = detector.capabilities
 
         # Should fall back to latest known
-        assert caps is VERSION_REGISTRY["0.18.2.0"]
+        assert caps is VERSION_REGISTRY["1.0.0.0"]
 
     def test_registry_016_source_completeness(self):
         """Test that 0.16.0.0 registry has all expected source types."""
@@ -303,13 +303,13 @@ class TestVersionDetector:
         """0.17.1.0 is registered."""
         assert "0.17.1.0" in VERSION_REGISTRY
 
-    def test_registry_0182_is_latest(self):
-        """0.18.0.0 to 0.18.2.0 are registered; 0.18.2.0 is the latest known version."""
+    def test_registry_018_series_and_latest(self):
+        """0.18.0.0 to 0.18.2.0 are registered; 1.0.0.0 is the latest known version."""
         assert "0.18.0.0" in VERSION_REGISTRY
         assert "0.18.1.0" in VERSION_REGISTRY
         assert "0.18.2.0" in VERSION_REGISTRY
         latest = max(VERSION_REGISTRY, key=lambda v: tuple(int(x) for x in v.split(".")))
-        assert latest == "0.18.2.0"
+        assert latest == "1.0.0.0"
 
     def test_registry_0182_requires_license_same_cli_surface(self):
         """0.18.2 is a licensing release: a licence is always required, no CLI change."""

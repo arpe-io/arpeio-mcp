@@ -65,9 +65,10 @@ class TestEnum:
         assert ParallelismMethod("Timepartition") is ParallelismMethod.TIMEPARTITION
 
     def test_enum_matches_latest_registry(self):
-        """Every method the latest binary accepts is in the schema enum, and vice versa."""
-        latest = VERSION_REGISTRY["0.18.2.0"]
-        assert {m.value for m in ParallelismMethod} == set(latest.parallelism_methods)
+        """The schema enum covers every 0.18 method (1.0 adds Physical, see test_v100)."""
+        methods_018 = set(VERSION_REGISTRY["0.18.2.0"].parallelism_methods)
+        assert methods_018 <= {m.value for m in ParallelismMethod}
+        assert {m.value for m in ParallelismMethod} - methods_018 == {"Physical"}
 
 
 class TestDBPartition:
@@ -84,7 +85,8 @@ class TestDBPartition:
         assert request.options.method == ParallelismMethod.DB_PARTITION
 
     def test_documented_source_set(self):
-        assert DB_PARTITION_SOURCES == {
+        # 0.18 sources; 1.0 adds adbc_db2 (and the adbc_* twins, see test_v100)
+        assert DB_PARTITION_SOURCES - {"adbc_db2"} == {
             "mssql", "msoledbsql", "pgsql", "pgcopy", "oraodp", "mysql", "teradata"
         }
 
@@ -213,7 +215,7 @@ class TestPreviewTool:
         })
         assert structured["status"] == "ok"
         assert "FASTTRANSFER_DATEFORMAT" in structured["explanation"]
-        # Latest known capabilities (0.18.2) apply in preview-only mode: no warning
+        # Latest known capabilities apply in preview-only mode: no warning
         assert structured["warnings"] == []
         jsonschema.validate(structured, PREVIEW_OUTPUT_SCHEMA)
 
@@ -296,14 +298,15 @@ class TestWorkflowTips:
 
 class TestDocVersions:
     def test_018_listed(self):
-        assert FASTTRANSFER_DOC_VERSIONS[-1] == "0.18"
+        assert "0.18" in FASTTRANSFER_DOC_VERSIONS
         assert "0.17" in FASTTRANSFER_DOC_VERSIONS
 
-    def test_018_served_at_latest(self):
+    def test_018_has_its_own_path_since_10(self):
+        """0.18 was served at /latest/ until 1.0 was published; it is now at /0.18/."""
         aliases = DOC_URL_VERSION_ALIASES["fasttransfer"]
-        assert aliases == {"0.18": "latest"}
+        assert "0.18" not in aliases
         url = DOC_URLS["fasttransfer"].format(version=aliases.get("0.18", "0.18"))
-        assert url == "https://fasttransfer-docs.arpe.io/latest/sitemap"
+        assert url == "https://fasttransfer-docs.arpe.io/0.18/sitemap"
 
     def test_017_keeps_versioned_path(self):
         version = DOC_URL_VERSION_ALIASES["fasttransfer"].get("0.17", "0.17")
@@ -313,7 +316,7 @@ class TestDocVersions:
 
     @pytest.mark.parametrize(
         "detected,expected",
-        [("0.18.2.0", "0.18"), ("0.18.1.0", "0.18"), ("0.18.0.0", "0.18"), ("0.17.1.0", "0.17"), (None, "0.18")],
+        [("0.18.2.0", "0.18"), ("0.18.1.0", "0.18"), ("0.18.0.0", "0.18"), ("0.17.1.0", "0.17"), (None, "1.0")],
     )
     def test_detected_version_maps_to_doc_version(self, detected, expected):
         assert best_version_for("fasttransfer", detected, FASTTRANSFER_DOC_VERSIONS) == expected

@@ -30,6 +30,14 @@ class SourceConnectionType(str, Enum):
     POSTGRES_COPY = "pgcopy"
     POSTGRES = "pgsql"
     TERADATA = "teradata"
+    # ADBC connection types (FastTransfer 1.0+): the bundled Arpe ADBC drivers.
+    # Only with an adbc_* target.
+    ADBC_MSSQL = "adbc_mssql"  # ArpeMSSQL
+    ADBC_PGSQL = "adbc_pgsql"  # ArpePGSQL
+    ADBC_ORACLE = "adbc_oracle"  # ArpeOracle
+    ADBC_NETEZZA = "adbc_netezza"  # ArpeNetezza
+    ADBC_DB2 = "adbc_db2"  # ArpeDb2, Db2 for LUW (no native counterpart)
+    ADBC_TERADATA = "adbc_teradata"  # ArpeTeradata
 
 
 class TargetConnectionType(str, Enum):
@@ -46,29 +54,81 @@ class TargetConnectionType(str, Enum):
     POSTGRES_COPY = "pgcopy"
     POSTGRES = "pgsql"
     TERADATA = "teradata"
+    # ADBC connection types (FastTransfer 1.0+). Only with an adbc_* source.
+    ADBC_MSSQL = "adbc_mssql"
+    ADBC_PGSQL = "adbc_pgsql"
+    ADBC_ORACLE = "adbc_oracle"
+    ADBC_NETEZZA = "adbc_netezza"
+    ADBC_DB2 = "adbc_db2"
+    ADBC_TERADATA = "adbc_teradata"
 
 
 class ParallelismMethod(str, Enum):
     """Parallelism methods for data distribution."""
 
-    CTID = "Ctid"  # PostgreSQL-specific
+    CTID = "Ctid"  # PostgreSQL-specific (deprecated in 1.0, use Physical)
     DATA_DRIVEN = "DataDriven"  # Distribute by distinct key values
     NTILE = "Ntile"  # Even distribution
-    NZ_DATA_SLICE = "NZDataSlice"  # Netezza-specific
+    NZ_DATA_SLICE = "NZDataSlice"  # Netezza-specific (deprecated in 1.0)
     NONE = "None"  # No parallelism
-    PHYSLOC = "Physloc"  # Physical location
+    PHYSLOC = "Physloc"  # SQL Server physical location (deprecated in 1.0)
     RANDOM = "Random"  # Random distribution using modulo
     RANGE_ID = "RangeId"  # Numeric range distribution
-    ROWID = "Rowid"  # Oracle-specific
+    ROWID = "Rowid"  # Oracle-specific (deprecated in 1.0)
     DB_PARTITION = "DBPartition"  # Native table partitions (FastTransfer 0.18+)
     TIMEPARTITION = "Timepartition"  # Time parts of a date column (FastTransfer 0.18+)
+    PHYSICAL = "Physical"  # Physical row location, resolved per engine (1.0+)
 
 
-# Source types whose native partitions DBPartition can read (FastTransfer 0.18).
-# FastTransfer falls back to None (single stream) on any other source.
+# Each ADBC connection type with a native counterpart maps to the native type
+# of the same engine: FastTransfer picks its SQL (catalog queries, parallel
+# planning) by engine, so the parallel methods follow the native source.
+ADBC_NATIVE_TYPES = {
+    "adbc_mssql": "mssql",
+    "adbc_pgsql": "pgsql",
+    "adbc_oracle": "oraodp",
+    "adbc_netezza": "nzsql",
+    "adbc_teradata": "teradata",
+}
+
+# Every ADBC connection type (FastTransfer 1.0+); adbc_db2 has no native twin.
+# ADBC moves Arrow batches from one driver to the other: both ends must be adbc_*.
+ADBC_TYPES = frozenset([*ADBC_NATIVE_TYPES, "adbc_db2"])
+
+# ADBC types whose driver has no integrated / Kerberos logon.
+NO_TRUSTED_AUTH_TYPES = frozenset(["adbc_netezza"])
+
+# Native connection types per Physical strategy (FastTransfer 1.0+). Physical
+# is resolved from the source connection type; other sources are refused.
+PHYSICAL_STRATEGIES = {
+    "pgsql": "Ctid",
+    "pgcopy": "Ctid",
+    "oraodp": "Rowid",
+    "mssql": "Physloc",
+    "msoledbsql": "Physloc",
+    "nzsql": "NZDataSlice",
+    "nzbulk": "NZDataSlice",
+    "nzoledb": "NZDataSlice",
+}
+
+# Methods that split a table on its physical row location: Physical and the
+# engine-specific names it replaces. A query given with them filters the table.
+PHYSICAL_METHODS = frozenset(["Physical", "Ctid", "Rowid", "Physloc", "NZDataSlice"])
+
+# Source types whose native partitions DBPartition can read (FastTransfer 0.18;
+# adbc_db2: Db2 for LUW range partitioning, 1.0+). ADBC types follow their
+# native counterpart. FastTransfer falls back to None (single stream) on any
+# other source.
 DB_PARTITION_SOURCES = frozenset(
-    ["mssql", "msoledbsql", "pgsql", "pgcopy", "oraodp", "mysql", "teradata"]
+    ["mssql", "msoledbsql", "pgsql", "pgcopy", "oraodp", "mysql", "teradata", "adbc_db2"]
 )
+
+
+def native_source_type(source_type: str) -> str:
+    """Return the native connection type behind an ADBC type (or the type itself)."""
+    source_type = source_type.lower()
+    return ADBC_NATIVE_TYPES.get(source_type, source_type)
+
 
 # Timepartition --distributekeycolumn tuple: (date_column,<time parts>), where the
 # time parts are year | year,month | year,month,day | year,week.
@@ -150,6 +210,16 @@ class ConnectionConfig(BaseModel):
     )
     dsn: Optional[str] = Field(None, description="ODBC DSN name")
     provider: Optional[str] = Field(None, description="OleDB provider name")
+
+    @model_validator(mode="after")
+    def validate_adbc_rules(self):
+        """Connection rules of the ADBC connection types."""
+        if self.type.lower() in NO_TRUSTED_AUTH_TYPES and self.trusted_auth:
+            raise ValueError(
+                f"{self.type} does not support trusted authentication: "
+                f"give user and password (or a connect_string)"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_mutual_exclusivity(self):
@@ -320,9 +390,37 @@ class TransferRequest(BaseModel):
             raise ValueError(
                 "Source must specify either 'table', 'query', or 'file_input'"
             )
-        if count > 1:
+        # The physical-location methods split the table itself: a query given
+        # with the table filters it (FastTransfer sends both).
+        table_with_filter = (
+            has_table
+            and has_query
+            and not has_file_input
+            and self.options.method.value in PHYSICAL_METHODS
+        )
+        if count > 1 and not table_with_filter:
             raise ValueError(
-                "Source must specify only one of 'table', 'query', or 'file_input'"
+                "Source must specify only one of 'table', 'query', or 'file_input' "
+                "(a 'query' can be added to 'table' only with the Physical method, "
+                "to filter the table)"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_adbc_pairing(self):
+        """ADBC connection types work only as a pair (FastTransfer 1.0+)."""
+        source_is_adbc = self.source.type.lower() in ADBC_TYPES
+        target_is_adbc = self.target.type.lower() in ADBC_TYPES
+        if source_is_adbc != target_is_adbc:
+            raise ValueError(
+                f"ADBC connection types (adbc_*) cannot be mixed with other types: "
+                f"source is {self.source.type}, target is {self.target.type}. "
+                f"Use adbc_* on both the source and the target, or on neither"
+            )
+        if target_is_adbc and self.options.use_work_tables:
+            raise ValueError(
+                f"use_work_tables is not available with an ADBC target "
+                f"({self.target.type}): the parallel streams load the target table directly"
             )
         return self
 
@@ -337,7 +435,8 @@ class TransferRequest(BaseModel):
     def validate_method_compatibility(self):
         """Validate parallelism method compatibility with source database."""
         method = self.options.method
-        source_type = self.source.type.lower()
+        # ADBC types use the parallel planning of their native counterpart
+        source_type = native_source_type(self.source.type)
 
         # Ctid is PostgreSQL-specific
         if method == ParallelismMethod.CTID and source_type not in [
@@ -345,7 +444,7 @@ class TransferRequest(BaseModel):
             "pgcopy",
         ]:
             raise ValueError(
-                f"Method 'Ctid' only works with PostgreSQL sources, not '{source_type}'"
+                f"Method 'Ctid' only works with PostgreSQL sources, not '{self.source.type}'"
             )
 
         # Rowid is Oracle-specific
@@ -353,7 +452,7 @@ class TransferRequest(BaseModel):
             "oraodp",
         ]:
             raise ValueError(
-                f"Method 'Rowid' only works with Oracle sources, not '{source_type}'"
+                f"Method 'Rowid' only works with Oracle sources, not '{self.source.type}'"
             )
 
         # NZDataSlice is Netezza-specific
@@ -363,18 +462,57 @@ class TransferRequest(BaseModel):
             "nzbulk",
         ]:
             raise ValueError(
-                f"Method 'NZDataSlice' only works with Netezza sources, not '{source_type}'"
+                f"Method 'NZDataSlice' only works with Netezza sources, not '{self.source.type}'"
             )
 
-        # Physloc is SQL Server-specific
+        # Physloc is SQL Server-specific. odbc is accepted with this deprecated
+        # name only: Physical cannot tell the engine behind an ODBC driver.
         if method == ParallelismMethod.PHYSLOC and source_type not in [
             "mssql",
-            "oledb",
             "odbc",
             "msoledbsql",
         ]:
             raise ValueError(
-                f"Method 'Physloc' only works with SQL Server sources (mssql, oledb, odbc, msoledbsql), not '{source_type}'"
+                f"Method 'Physloc' only works with SQL Server sources (mssql, msoledbsql, "
+                f"adbc_mssql, or odbc to SQL Server), not '{self.source.type}'"
+            )
+
+        # Physical resolves to Ctid / Rowid / Physloc / NZDataSlice from the
+        # source connection type (FastTransfer 1.0+); other sources are refused.
+        if method == ParallelismMethod.PHYSICAL and source_type not in PHYSICAL_STRATEGIES:
+            if source_type in ("odbc", "oledb"):
+                raise ValueError(
+                    f"Method 'Physical' cannot identify the source engine behind "
+                    f"connection type '{self.source.type}': use a native connection type "
+                    f"(pgsql, pgcopy, oraodp, mssql, msoledbsql, nzsql, nzbulk, nzoledb) "
+                    f"or its adbc_* counterpart"
+                )
+            raise ValueError(
+                f"Method 'Physical' is not supported for source connection type "
+                f"'{self.source.type}': supported sources are PostgreSQL, Oracle, "
+                f"SQL Server and Netezza"
+            )
+
+        # Ctid, Rowid and Physloc split the table itself: schema and table are
+        # mandatory, even with a query (which then filters the table). Netezza
+        # (NZDataSlice) needs neither.
+        strategy = (
+            PHYSICAL_STRATEGIES.get(source_type)
+            if method == ParallelismMethod.PHYSICAL
+            else method.value
+        )
+        if strategy in ("Ctid", "Rowid", "Physloc") and (
+            not self.source.schema or not self.source.table
+        ):
+            label = (
+                f"Physical ({strategy})"
+                if method == ParallelismMethod.PHYSICAL
+                else method.value
+            )
+            raise ValueError(
+                f"Method '{label}' requires both 'schema' and 'table' "
+                f"(FastTransfer splits the table on its physical row location; "
+                f"a 'query' can be added to filter that table)"
             )
 
         # DBPartition reads the native partitions of a table (FastTransfer 0.18+).
@@ -383,8 +521,9 @@ class TransferRequest(BaseModel):
             if source_type not in DB_PARTITION_SOURCES:
                 raise ValueError(
                     f"Method 'DBPartition' only works with SQL Server (mssql, msoledbsql), "
-                    f"PostgreSQL (pgsql, pgcopy), Oracle (oraodp), MySQL (mysql) and "
-                    f"Teradata (teradata) sources, not '{self.source.type}' "
+                    f"PostgreSQL (pgsql, pgcopy), Oracle (oraodp), MySQL (mysql), "
+                    f"Teradata (teradata), their adbc_* counterparts and Db2 for LUW "
+                    f"(adbc_db2) sources, not '{self.source.type}' "
                     f"(FastTransfer would fall back to a single stream)"
                 )
             if not self.source.schema or not self.source.table:

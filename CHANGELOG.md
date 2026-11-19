@@ -1,13 +1,32 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.14] - 2026-11-19
 
 ### Added
 
+- **FastTransfer 1.0.0 support**: new registry entry `1.0.0.0`, now the latest known version. The README says "up to 1.0.0".
+  - New `adbc_mssql`, `adbc_pgsql`, `adbc_oracle`, `adbc_netezza`, `adbc_db2` (Db2 for LUW) and `adbc_teradata` connection types, as sources and as targets, backed by the Arpe ADBC drivers bundled in FastTransfer. ADBC is needed on both ends: an `adbc_*` type with a native type is refused with FastTransfer's message, and so is `use_work_tables` with an ADBC target, and `trusted_auth` with `adbc_netezza`. `server` is `host`, `host:port` or `host,port`; a `connect_string` uses the driver's `uri=...` form.
+  - New `Physical` parallel method (1.0+): the physical row location, resolved from the source connection type to Ctid (`pgsql`, `pgcopy`, `adbc_pgsql`), Rowid (`oraodp`, `adbc_oracle`), Physloc (`mssql`, `msoledbsql`, `adbc_mssql`) or NZDataSlice (`nzsql`, `nzbulk`, `nzoledb`, `adbc_netezza`); other sources are rejected, `odbc` and `oledb` with a hint. Parallelism suggestions, the auto-suggestion of `fasttransfer_preview_transfer` and the workflow tips recommend `Physical` on a 1.0+ binary and the engine-specific name on an older one.
+  - `Physical`, `Ctid`, `Rowid` and `Physloc` require the source `schema` and `table`, as FastTransfer 1.0 does (Netezza needs neither). A `query` can be given next to them: it filters the table, and the command then carries `--sourcetable` and `--query`. Any other method still takes a table or a query, not both.
+  - `DBPartition` accepts the `adbc_mssql`, `adbc_pgsql`, `adbc_oracle` and `adbc_teradata` sources, and `adbc_db2` (range-partitioned Db2 for LUW tables).
+  - Version-compatibility warnings: an `adbc_*` type or `Physical` against a binary older than 1.0; `Ctid`, `Rowid`, `Physloc` or `NZDataSlice` against 1.0+ (deprecated, removed in 2.0; not for `Physloc` through an `odbc` source, where `Physical` is refused); `NZDataSlice` without schema and table or with a `nzbulk` / `nzoledb` source, or `Physloc` with a `msoledbsql` source, against a binary older than 1.0; and `use_work_tables` with an `msbulk` or `pgcopy` target against a binary older than 1.0, where the merge fails, nothing is loaded and the exit code is still 0.
+  - `fasttransfer_info`: `action="combinations"` lists the ADBC types and the pairing rule; `action="workflow"` gives ADBC notes (license block, exact case of the target names, connection, platforms), flags a mixed pair, and adds target tips for `adbc_mssql`, `adbc_pgsql`, `adbc_db2`, `adbc_teradata`, `pgcopy` and `orabulk`, with the known limitations of 1.0.
+  - The server instructions gain a "FastTransfer 1.0 notes" section, and the parallelism table says that `Physical` covers FastTransfer 1.0+.
+  - FastTransfer 1.0 docs added to doc search: 1.0 is the version served at `/latest/`, and 0.18 is now crawled from `/0.18/`. The docs cache is keyed by doc version: the first search with a 1.0 binary (or no binary) crawls the FastTransfer pages again.
 - **LakeXpress 0.6.9 support**: new registry entry, with no option change. The README says "up to 0.6.9".
   - A large table set with `incremental_table` is split between the `fastbcp_p` threads from 0.6.9, like a full export (`Ctid` on PostgreSQL, `Physloc` on SQL Server, `Rowid` on Oracle); up to 0.6.8 it is read by a single thread. `lakexpress_info` with `action="workflow"` says so for these three sources, and the "LakeXpress 0.6 notes" of the server instructions gain a "Large incremental tables" entry: one file per thread, and `SCHEMA.TABLE:None::1` in `fastbcp_table_config` to keep a single thread.
   - The exit codes of the server instructions say that before 0.6.9 a run of more than 100 tables with `n_jobs` above 1 exports every table but reports those beyond 100 as failed, with exit code 40.
 - **LakeXpress, Oracle source**: `lakexpress_info` with `action="workflow"` and the "LakeXpress 0.6 notes" of the server instructions say that the `Rowid` split of a large Oracle table needs `SELECT_CATALOG_ROLE` (FastBCP reads `DBA_EXTENTS`, `DBA_SEGMENTS` and `DBA_OBJECTS` to build the `ROWID` ranges), what the error looks like without it, and how to do without the role (`SCHEMA.TABLE:None::1` or a key-based method in `fastbcp_table_config`). Tables below `large_table_threshold` and syncs with `fastbcp_p` 1 do not need it. Up to LakeXpress 0.6.8 an incremental table is read by a single thread and does not need the role; 0.6.9+ splits it like a full export, so an incremental sync that worked without the role fails on its large tables after the upgrade.
+
+### Changed
+
+- **FastTransfer parallelism suggestions**: a generic `odbc` or `oledb` source without a numeric key is no longer given `Physloc` (the engine behind the driver is unknown, and `oledb` never accepted it); a key-based method is suggested instead. `Physloc` is rejected with an `oledb` source. On a binary older than 1.0, `msoledbsql`, `nzbulk` and `nzoledb` sources get a key-based method too, as these versions accept the physical split with `mssql` and `nzsql` only.
+- The `use_work_tables` description and the SQL Server target tip say that it is for FastTransfer 1.0+ only with an `msbulk` or `pgcopy` target.
+
+### Fixed
+
+- **FastTransfer `use_work_tables: false` emitted `--useworktables`**: the switch is now only added when the option is true.
+- **`fasttransfer_preview_transfer` without a `method` failed for sources with no physical-location split** (MySQL, Teradata, SAP HANA, ClickHouse, DuckDB...): `Ntile` was auto-suggested without a key column, and the call ended in a validation error ("Method 'Ntile' requires distribute_key_column"). The auto-suggestion is now limited to the physical-location methods, and only when they can run (schema and table given, or a Netezza source on 1.0+); otherwise the command keeps method `None`.
 
 ## [0.3.13] - 2026-11-19
 

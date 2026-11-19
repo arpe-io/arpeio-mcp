@@ -11,7 +11,7 @@ from typing import Any, Dict, List
 
 from ..base.command_builder import BaseCommandBuilder, ArpeToolError
 from ..base.version_detector import BaseVersionDetector
-from .validators import TransferRequest, ConnectionConfig
+from .validators import TransferRequest, ConnectionConfig, native_source_type
 from .version import VERSION_REGISTRY, VersionCapabilities
 
 
@@ -100,11 +100,12 @@ class CommandBuilder(BaseCommandBuilder):
             params.extend(["--sourcedatabase", source.database])
         if source.schema:
             params.extend(["--sourceschema", source.schema])
+        # A query next to the table filters it (physical-location methods)
         if source.table:
             params.extend(["--sourcetable", source.table])
-        elif source.query:
+        if source.query:
             params.extend(["--query", source.query])
-        elif source.file_input:
+        elif source.file_input and not source.table:
             params.extend(["--fileinput", source.file_input])
 
         # Provider (for OleDB)
@@ -177,8 +178,8 @@ class CommandBuilder(BaseCommandBuilder):
         if options.data_driven_query:
             params.extend(["--datadrivenquery", options.data_driven_query])
 
-        # Use work tables
-        if options.use_work_tables is not None:
+        # Use work tables (a switch: only emitted when asked for)
+        if options.use_work_tables:
             params.append("--useworktables")
 
         # Settings file
@@ -320,6 +321,18 @@ def get_supported_combinations() -> Dict[str, List[str]]:
             "ClickHouse",
             "SAP HANA",
         ],
+        # FastTransfer 1.0+: the bundled Arpe ADBC drivers. ADBC is needed on
+        # both ends: any adbc_* source with any adbc_* target, never mixed
+        # with a native type. Windows x64 and Linux x64 only.
+        "ADBC (adbc_mssql, adbc_pgsql, adbc_oracle, adbc_netezza, adbc_db2, "
+        "adbc_teradata; FastTransfer 1.0+, adbc_* on both ends)": [
+            "SQL Server (adbc_mssql)",
+            "PostgreSQL (adbc_pgsql)",
+            "Oracle (adbc_oracle)",
+            "Netezza (adbc_netezza)",
+            "IBM Db2 for LUW (adbc_db2)",
+            "Teradata (adbc_teradata)",
+        ],
     }
 
 
@@ -328,6 +341,7 @@ def suggest_parallelism_method(
     has_numeric_key: bool,
     has_identity_column: bool,
     table_size_estimate: str,
+    physical_supported: bool = True,
 ) -> Dict[str, str]:
     """
     Suggest optimal parallelism method based on source database and table characteristics.
@@ -337,11 +351,15 @@ def suggest_parallelism_method(
         has_numeric_key: Whether table has a numeric key column
         has_identity_column: Whether table has an identity/auto-increment column
         table_size_estimate: Table size ('small', 'medium', 'large')
+        physical_supported: Whether the FastTransfer binary accepts the Physical
+            method (1.0+). When False, the engine-specific name (Ctid, Rowid,
+            Physloc, NZDataSlice) is returned instead.
 
     Returns:
         Dictionary with 'method' and 'explanation' keys
     """
-    source_lower = source_type.lower()
+    # ADBC types share the parallel planning of their native counterpart
+    source_lower = native_source_type(source_type)
 
     # Small tables - no parallelism needed
     if table_size_estimate == "small":
@@ -350,33 +368,60 @@ def suggest_parallelism_method(
             "explanation": "Table is small - parallelism overhead would likely reduce performance. Use None for best results.",
         }
 
-    # PostgreSQL - Ctid is optimal
+    def physical(engine_method: str, explanation: str, needs_table: bool = True) -> Dict[str, str]:
+        needs = (
+            "it needs schema and table (a query can be added to filter the table), no key column"
+            if needs_table
+            else "it needs no key column"
+        )
+        if physical_supported:
+            return {
+                "method": "Physical",
+                "explanation": (
+                    f"{explanation} Physical (FastTransfer 1.0+) resolves to "
+                    f"{engine_method} for this connection type; {needs}."
+                ),
+            }
+        return {
+            "method": engine_method,
+            "explanation": (
+                f"{explanation} This FastTransfer version predates Physical, so use "
+                f"{engine_method} directly; it needs schema and table, no key column."
+            ),
+        }
+
+    # PostgreSQL - physical tuple id (Ctid)
     if source_lower in ["pgsql", "pgcopy", "postgresql"]:
-        return {
-            "method": "Ctid",
-            "explanation": "PostgreSQL source detected. Ctid method provides efficient parallel reading using PostgreSQL's native tuple identifier.",
-        }
+        return physical(
+            "Ctid",
+            "PostgreSQL source detected. Splitting on the native tuple identifier (CTID) reads the table in parallel without a key column.",
+        )
 
-    # Oracle - Rowid is optimal
+    # Oracle - ROWID
     if source_lower in ["oraodp"]:
-        return {
-            "method": "Rowid",
-            "explanation": "Oracle source detected. Rowid method provides efficient parallel reading using Oracle's native row identifier.",
-        }
+        return physical(
+            "Rowid",
+            "Oracle source detected. Splitting on the native ROWID reads the table in parallel without a key column.",
+        )
 
-    # Netezza - NZDataSlice is optimal
-    if source_lower in ["nzoledb", "nzsql", "nzbulk", "netezza"]:
-        return {
-            "method": "NZDataSlice",
-            "explanation": "Netezza source detected. NZDataSlice method leverages Netezza's data slicing for optimal parallel performance.",
-        }
+    # Netezza - data slices. nzbulk and nzoledb are accepted for it from 1.0 only.
+    netezza = ["nzoledb", "nzsql", "nzbulk", "netezza"] if physical_supported else ["nzsql", "netezza"]
+    if source_lower in netezza:
+        return physical(
+            "NZDataSlice",
+            "Netezza source detected. Splitting on the Netezza data slices leverages the appliance's own distribution.",
+            needs_table=False,
+        )
 
-    # SQL Server without numeric key - Physloc is a good option
-    if source_lower in ["mssql", "oledb", "odbc", "msoledbsql"] and not has_numeric_key:
-        return {
-            "method": "Physloc",
-            "explanation": "SQL Server source detected without numeric key. Physloc method uses physical row location for parallel reading without requiring a key column.",
-        }
+    # SQL Server without numeric key - physical row location (Physloc).
+    # msoledbsql is accepted for it from 1.0 only. odbc / oledb are left out:
+    # the engine behind them is unknown, and Physical refuses both.
+    sql_server = ["mssql", "msoledbsql"] if physical_supported else ["mssql"]
+    if source_lower in sql_server and not has_numeric_key:
+        return physical(
+            "Physloc",
+            "SQL Server source detected without numeric key. Splitting on the physical row location needs no key column; use it on data that is not being written (read-only table, database or snapshot).",
+        )
 
     # If has numeric key - RangeId or Random are good choices
     if has_numeric_key:
