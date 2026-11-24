@@ -80,7 +80,16 @@ class TestLogLevel:
         assert LogLevel("warning") == LogLevel.WARNING
         assert LogLevel("information") == LogLevel.INFORMATION
         assert LogLevel("debug") == LogLevel.DEBUG
-        assert LogLevel("fatal") == LogLevel.FATAL
+        assert LogLevel("verbose") == LogLevel.VERBOSE
+
+    def test_fatal_is_not_a_log_level(self):
+        """FastTransfer refuses --loglevel fatal (#5)."""
+        with pytest.raises(ValueError):
+            LogLevel("fatal")
+
+    def test_log_levels_match_the_fasttransfer_parser(self):
+        """AllowedValues of --loglevel in FastTransfer 1.0 and 1.1."""
+        assert [e.value for e in LogLevel] == ["error", "warning", "information", "debug", "verbose"]
 
 
 class TestConnectionConfig:

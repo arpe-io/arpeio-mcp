@@ -287,7 +287,7 @@ class LogLevel(str, Enum):
     WARNING = "warning"
     INFORMATION = "information"
     DEBUG = "debug"
-    FATAL = "fatal"
+    VERBOSE = "verbose"
 
 
 class ConnectionConfig(BaseModel):
