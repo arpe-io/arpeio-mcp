@@ -11,6 +11,10 @@ from typing import Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+# Bounds of --degree in the FastTransfer parser (BoundedValueArgument, inclusive).
+DEGREE_MIN = -32
+DEGREE_MAX = 1024
+
 class SourceConnectionType(str, Enum):
     """Source database connection types supported by FastTransfer."""
 
@@ -287,7 +291,7 @@ class LogLevel(str, Enum):
     WARNING = "warning"
     INFORMATION = "information"
     DEBUG = "debug"
-    FATAL = "fatal"
+    VERBOSE = "verbose"
 
 
 class ConnectionConfig(BaseModel):
@@ -452,11 +456,12 @@ class TransferOptions(BaseModel):
     @field_validator("degree")
     @classmethod
     def validate_degree(cls, v):
-        """Validate parallelism degree."""
-        if v == 0 or (v > 0 and v < 1024) or v < 0:
+        """Validate parallelism degree: the FastTransfer parser bounds --degree to -32..1024."""
+        if DEGREE_MIN <= v <= DEGREE_MAX:
             return v
         raise ValueError(
-            "Degree must be 0 (auto), 0 < n < 1024 (fixed), or < 0 (CPU adaptive)"
+            f"Degree must be between {DEGREE_MIN} and {DEGREE_MAX}: 0 (all cores), "
+            f"1 to {DEGREE_MAX} (fixed), or {DEGREE_MIN} to -1 (cores divided by the absolute value)"
         )
 
     @model_validator(mode="after")
@@ -596,9 +601,18 @@ class TransferRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_target_requires_table(self):
-        """Ensure target has table specified."""
+        """Ensure target has schema and table specified.
+
+        FastTransfer stops with 'Target Table is mandatory' / 'Target Schema is
+        mandatory' before connecting when --targettable / --targetschema is missing.
+        """
         if not self.target.table:
             raise ValueError("Target must specify 'table'")
+        if not self.target.schema:
+            raise ValueError(
+                "Target must specify 'schema': FastTransfer requires --targetschema "
+                "(for example 'dbo' on SQL Server, 'public' on PostgreSQL, 'main' on DuckDB)"
+            )
         return self
 
     @model_validator(mode="after")
@@ -715,21 +729,6 @@ class TransferRequest(BaseModel):
             # Note: We can't validate if column is numeric without database access
             pass
         return self
-
-
-class ConnectionValidationRequest(BaseModel):
-    """Request to validate a database connection."""
-
-    connection: ConnectionConfig = Field(..., description="Connection to validate")
-    side: str = Field(..., description="Connection side: 'source' or 'target'")
-
-    @field_validator("side")
-    @classmethod
-    def validate_side(cls, v):
-        """Ensure side is either source or target."""
-        if v not in ["source", "target"]:
-            raise ValueError("Side must be 'source' or 'target'")
-        return v
 
 
 class ParallelismSuggestionRequest(BaseModel):

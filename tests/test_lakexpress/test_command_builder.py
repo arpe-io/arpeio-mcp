@@ -3,6 +3,7 @@
 from pathlib import Path
 from unittest.mock import Mock, patch
 import subprocess
+import sys
 
 import pytest
 
@@ -18,6 +19,9 @@ from src.lakexpress.validators import (
     CommandType,
 )
 from src.base.version_detector import ToolVersion
+
+# Windows has no execute permission bit: os.access(path, os.X_OK) is true for any existing file.
+NO_EXECUTE_BIT = pytest.mark.skipif(sys.platform == "win32", reason="no execute permission bit on Windows")
 
 
 @pytest.fixture
@@ -84,6 +88,7 @@ class TestCommandBuilder:
         builder = CommandBuilder("/nonexistent/path/LakeXpress")
         assert builder._preview_only is True
 
+    @NO_EXECUTE_BIT
     def test_init_with_non_executable_binary(self, tmp_path):
         """Test initialization with non-executable binary enters preview-only mode."""
         binary = tmp_path / "LakeXpress"

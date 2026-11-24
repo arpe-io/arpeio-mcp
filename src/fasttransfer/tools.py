@@ -6,7 +6,6 @@ designed to be aggregated by a unified MCP server.
 """
 
 import logging
-import shlex
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Callable, Awaitable
 
@@ -19,10 +18,11 @@ from .validators import (
     ADBC_TYPES,
     BACKUP_TYPES,
     CREATE_LOAD_MODES,
+    DEGREE_MAX,
+    DEGREE_MIN,
     PHYSICAL_METHODS,
     PHYSICAL_STRATEGIES,
     TransferRequest,
-    ConnectionValidationRequest,
     ParallelismSuggestionRequest,
     SourceConnectionType,
     TargetConnectionType,
@@ -35,6 +35,7 @@ from .validators import (
 )
 from .version import check_version_compatibility
 from src.base.error_patterns import diagnose_cli_error
+from src.base.command_line import command_input_schema, join_command, parse_command
 from src.base.structured import make_output_schema, respond
 
 
@@ -51,7 +52,7 @@ PREVIEW_OUTPUT_SCHEMA = make_output_schema({
     },
     "command_string": {
         "type": "string",
-        "description": "The argv joined into one command string (real credentials).",
+        "description": "The argv quoted into one string (POSIX shell quoting, real credentials), accepted as-is by the execute tool.",
     },
     "command_display": {
         "type": "string",
@@ -201,7 +202,7 @@ def create_tools(
                                 "type": "string",
                                 "description": "Target database or service name.",
                             },
-                            "schema": {"type": "string", "description": "Target schema name. Omit to use the database default schema. It must exist, also with load_mode Create. With an adbc_* target it is used exactly as typed (quoted identifier): write it in its stored case."},
+                            "schema": {"type": "string", "description": "Target schema name. Required: FastTransfer stops with 'Target Schema is mandatory' without it (for example 'dbo' on SQL Server, 'public' on PostgreSQL, 'main' on DuckDB). It must exist, also with load_mode Create. With an adbc_* target it is used exactly as typed (quoted identifier): write it in its stored case."},
                             "table": {
                                 "type": "string",
                                 "description": "Target table name. The table must already exist in the target database, unless load_mode is Create (FastTransfer 1.1+), which creates it from the source. With an adbc_* target it is used exactly as typed (quoted identifier): write it in its stored case ('ORDERS' on Oracle, Db2 and Teradata; 'orders' on PostgreSQL).",
@@ -218,7 +219,7 @@ def create_tools(
                                 "description": "Full native connection string. Use instead of server/user/password for custom formats. adbc_* types take the driver's own vocabulary ('uri=sqlserver://user:password@host:1433/?database=db', with driver options after ';'), not ADO.NET keywords.",
                             },
                         },
-                        "required": ["type", "database", "table"],
+                        "required": ["type", "database", "schema", "table"],
                     },
                     "os_type": {
                         "type": "string",
@@ -241,7 +242,9 @@ def create_tools(
                             },
                             "degree": {
                                 "type": "integer",
-                                "description": "Parallelism degree. 0 = use all CPU cores. Positive integer = exact thread count. Negative integer = cores / abs(value), e.g. -2 on 16 cores = 8 threads.",
+                                "description": "Parallelism degree, from -32 to 1024. 0 = use all CPU cores. Positive integer = exact thread count. Negative integer = cores / abs(value), e.g. -2 on 16 cores = 8 threads.",
+                                "minimum": DEGREE_MIN,
+                                "maximum": DEGREE_MAX,
                                 "default": -2,
                             },
                             "load_mode": {
@@ -305,7 +308,7 @@ def create_tools(
             description=(
                 "Execute a FastTransfer command that was previously built by fasttransfer_preview_transfer. "
                 "Requires confirmation=true as a safety gate. "
-                "Does NOT build the command — the command string must come from a prior fasttransfer_preview_transfer call. "
+                "Does NOT build the command — the command must come from a prior fasttransfer_preview_transfer call. "
                 "Will fail if the FastTransfer binary is not installed."
             ),
             annotations=ToolAnnotations(
@@ -318,10 +321,7 @@ def create_tools(
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The full command string from fasttransfer_preview_transfer output (the unmasked version with actual passwords). Do not modify this string.",
-                    },
+                    "command": command_input_schema("fasttransfer_preview_transfer"),
                     "confirmation": {
                         "type": "boolean",
                         "description": "Safety gate. Must be explicitly set to true to execute. false or omitted = execution is blocked. Always confirm with the user before setting to true.",
@@ -527,7 +527,7 @@ def create_tools(
                 "",
                 "## Full command for execution:",
                 "```",
-                " ".join(command),
+                join_command(command),
                 "```",
             ]
 
@@ -535,7 +535,7 @@ def create_tools(
                 "status": "ok",
                 "tool": "fasttransfer_preview_transfer",
                 "command": command,
-                "command_string": " ".join(command),
+                "command_string": join_command(command),
                 "command_display": display_command,
                 "explanation": explanation,
                 "warnings": version_warnings,
@@ -609,17 +609,17 @@ def create_tools(
             )
 
         # Get command
-        command_str = arguments.get("command", "")
-        if not command_str:
+        raw_command = arguments.get("command", "")
+        if not raw_command:
             return respond(
                 "Error: No command provided. Please provide the command from fasttransfer_preview_transfer.",
                 {"status": "error", "tool": "fasttransfer_execute_transfer",
                  "error": "No command provided."},
             )
 
-        # Parse command string into list
+        # The command comes as the argv list or as the quoted command_string
         try:
-            command = shlex.split(command_str)
+            command = parse_command(raw_command)
         except ValueError as e:
             return respond(
                 f"Error parsing command: {str(e)}",
@@ -691,84 +691,6 @@ def create_tools(
                 "tool": "fasttransfer_execute_transfer",
                 "error": str(e),
             })
-
-    async def handle_validate_connection(arguments: Dict[str, Any]) -> list[TextContent]:
-        """Handle fasttransfer_validate_connection tool."""
-        try:
-            # Validate request
-            request = ConnectionValidationRequest(**arguments)
-
-            # Build validation response
-            connection = request.connection
-            issues = []
-
-            # Check for required fields based on connection type
-            if (
-                not connection.trusted_auth
-                and not connection.connect_string
-                and not connection.dsn
-            ):
-                if not connection.user:
-                    issues.append(
-                        "- Username is required (unless using trusted authentication, connect_string, or dsn)"
-                    )
-
-            # Check server format (only if server is provided)
-            if (
-                connection.server
-                and ":" not in connection.server
-                and "\\" not in connection.server
-            ):
-                issues.append(
-                    f"- Server '{connection.server}' may need port (e.g., localhost:5432) or instance name"
-                )
-
-            if issues:
-                response = [
-                    f"# Connection Validation - {request.side.upper()}",
-                    "",
-                    "**Issues Found:**",
-                    "",
-                    *issues,
-                    "",
-                    "Note: This is a parameter check only. Actual connectivity is tested during transfer execution.",
-                ]
-            else:
-                auth_method = "Trusted"
-                if connection.connect_string:
-                    auth_method = "Connection String"
-                elif connection.dsn:
-                    auth_method = "DSN"
-                elif connection.trusted_auth:
-                    auth_method = "Trusted"
-                else:
-                    auth_method = "Username/Password"
-
-                response = [
-                    f"# Connection Validation - {request.side.upper()}",
-                    "",
-                    "**All required parameters present**",
-                    "",
-                    f"- Connection Type: {connection.type}",
-                    f"- Server: {connection.server or '(not specified)'}",
-                    f"- Database: {connection.database}",
-                    f"- Authentication: {auth_method}",
-                    "",
-                    "Note: This validates parameters only. Actual connectivity will be tested during transfer.",
-                ]
-
-            return [TextContent(type="text", text="\n".join(response))]
-
-        except ValidationError as e:
-            error_msg = ["# Validation Error", ""]
-            for error in e.errors():
-                field = " -> ".join(str(x) for x in error["loc"])
-                error_msg.append(f"- **{field}**: {error['msg']}")
-            tips = _suggest_next_steps(e.errors())
-            if tips:
-                error_msg.append("")
-                error_msg.extend(tips)
-            return [TextContent(type="text", text="\n".join(error_msg))]
 
     async def handle_list_combinations(arguments: Dict[str, Any]) -> list[TextContent]:
         """Handle fasttransfer_list_combinations tool."""
@@ -1298,8 +1220,14 @@ def _build_transfer_explanation(request: TransferRequest) -> str:
             f"(FASTTRANSFER_INDEX_DIR sets the index directory)"
         )
     elif request.source.file_input:
+        server_info = (
+            f" ({request.source.server}/{request.source.database})"
+            if request.source.server
+            else f" ({request.source.database})"
+        )
         parts.append(
-            f"Import file '{request.source.file_input}' via {request.source.type} into {request.source.database}"
+            f"Execute on {request.source.type}{server_info} the query read from file "
+            f"'{request.source.file_input}'"
         )
     elif request.source.query and request.source.table:
         source_table = (

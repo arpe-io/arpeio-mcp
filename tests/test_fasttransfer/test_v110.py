@@ -1,5 +1,5 @@
 """FastTransfer 1.1: load mode Create and --inferdatatype, the backup sources
-(backup_mssql, backup_rman), SQL Server server names, docs 1.1 served at /1.1/."""
+(backup_mssql, backup_rman), SQL Server server names, docs 1.1 served at /latest/."""
 
 import jsonschema
 import pytest
@@ -688,6 +688,19 @@ class TestPreviewTool:
         assert "TRUNCATED" in structured["explanation"]
         assert "best" in structured["explanation"]
         jsonschema.validate(structured, PREVIEW_OUTPUT_SCHEMA)
+
+    @pytest.mark.asyncio
+    async def test_file_input_explanation_reads_the_query_from_the_file(self):
+        """--fileinput holds the SQL query, not data to import (#8)."""
+        _, handler = _handler()
+        _content, structured = await handler("fasttransfer_preview_transfer", {
+            "source": _source("duckdbstream", database=":memory:", file_input="/sql/extract.sql"),
+            "target": TARGET,
+            "options": {"method": "None"},
+        })
+        assert structured["status"] == "ok", structured
+        assert "the query read from file '/sql/extract.sql'" in structured["explanation"]
+        assert "Import file" not in structured["explanation"]
 
     @pytest.mark.asyncio
     async def test_create_warns_on_10_binary(self):

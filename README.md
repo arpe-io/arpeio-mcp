@@ -258,7 +258,7 @@ The command-building, execution, and discovery tools return **structured content
 (`outputSchema` + `structuredContent`) alongside the human-readable markdown, so
 MCP clients can chain calls programmatically instead of parsing prose:
 
-- **`*_preview_*`** → the built `command` (argv), `command_string`, masked `command_display`, `explanation`, and version `warnings`. The exact command can be handed straight to the matching `*_execute_*` tool.
+- **`*_preview_*`** → the built `command` (argv), `command_string`, masked `command_display`, `explanation`, and version `warnings`. The `command` list, or the `command_string` (quoted with POSIX shell rules), can be handed unchanged to the matching `*_execute_*` tool.
 - **`*_execute_*`** → `success`, `return_code`, `stdout`, `stderr`, and parsed `diagnostics`.
 - **`search_docs`** → ranked `results` records; **`arpe_get_status`** → per-product status; **`arpe_release_notes`** → release-notes `chunks`.
 

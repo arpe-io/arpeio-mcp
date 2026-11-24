@@ -3,6 +3,7 @@
 from pathlib import Path
 from unittest.mock import Mock, patch
 import subprocess
+import sys
 
 import pytest
 
@@ -15,6 +16,9 @@ from src.fasttransfer.command_builder import (
 from src.base.command_builder import ArpeToolError
 from src.fasttransfer.validators import TransferRequest
 from src.base.version_detector import ToolVersion
+
+# Windows has no execute permission bit: os.access(path, os.X_OK) is true for any existing file.
+NO_EXECUTE_BIT = pytest.mark.skipif(sys.platform == "win32", reason="no execute permission bit on Windows")
 
 
 @pytest.fixture
@@ -90,6 +94,7 @@ class TestCommandBuilder:
         builder = CommandBuilder("/nonexistent/path/FastTransfer")
         assert builder._preview_only is True
 
+    @NO_EXECUTE_BIT
     def test_init_with_non_executable_binary_enters_preview_mode(self, tmp_path):
         """Test initialization with non-executable binary enters preview-only mode."""
         binary = tmp_path / "FastTransfer"
@@ -141,6 +146,7 @@ class TestCommandBuilder:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -149,7 +155,7 @@ class TestCommandBuilder:
 
         command = builder.build_command(request)
         assert isinstance(command, list)
-        assert command[0] == "/nonexistent/path/FastTransfer"
+        assert command[0] == str(Path("/nonexistent/path/FastTransfer"))
 
     def test_build_command_basic(self, command_builder, sample_request):
         """Test building a basic command."""
@@ -215,6 +221,7 @@ class TestCommandBuilder:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "targetuser",
                 "password": "targetpass",
@@ -245,6 +252,7 @@ class TestCommandBuilder:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -271,6 +279,7 @@ class TestCommandBuilder:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -295,6 +304,7 @@ class TestCommandBuilder:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -322,6 +332,7 @@ class TestCommandBuilder:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -347,6 +358,7 @@ class TestCommandBuilder:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "trusted_auth": True,
             },
@@ -377,6 +389,7 @@ class TestCommandBuilder:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -419,6 +432,7 @@ class TestCommandBuilder:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -450,6 +464,7 @@ class TestCommandBuilder:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -475,6 +490,7 @@ class TestCommandBuilder:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -502,6 +518,7 @@ class TestCommandBuilder:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -529,6 +546,7 @@ class TestCommandBuilder:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -554,6 +572,7 @@ class TestCommandBuilder:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",

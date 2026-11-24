@@ -13,7 +13,6 @@ from src.fasttransfer.validators import (
     ConnectionConfig,
     TransferOptions,
     TransferRequest,
-    ConnectionValidationRequest,
     ParallelismSuggestionRequest,
 )
 
@@ -80,7 +79,16 @@ class TestLogLevel:
         assert LogLevel("warning") == LogLevel.WARNING
         assert LogLevel("information") == LogLevel.INFORMATION
         assert LogLevel("debug") == LogLevel.DEBUG
-        assert LogLevel("fatal") == LogLevel.FATAL
+        assert LogLevel("verbose") == LogLevel.VERBOSE
+
+    def test_fatal_is_not_a_log_level(self):
+        """FastTransfer refuses --loglevel fatal (#5)."""
+        with pytest.raises(ValueError):
+            LogLevel("fatal")
+
+    def test_log_levels_match_the_fasttransfer_parser(self):
+        """AllowedValues of --loglevel in FastTransfer 1.0 and 1.1."""
+        assert [e.value for e in LogLevel] == ["error", "warning", "information", "debug", "verbose"]
 
 
 class TestConnectionConfig:
@@ -270,10 +278,17 @@ class TestTransferOptions:
         options = TransferOptions(degree=-4)
         assert options.degree == -4
 
-    def test_invalid_degree_too_large(self):
-        """Test that degree >= 1024 is invalid."""
-        with pytest.raises(ValidationError):
-            TransferOptions(degree=1024)
+    @pytest.mark.parametrize("degree", [-32, -1, 1, 1024])
+    def test_degree_bounds_of_the_fasttransfer_parser_are_valid(self, degree):
+        """FastTransfer accepts --degree from -32 to 1024 (#7)."""
+        assert TransferOptions(degree=degree).degree == degree
+
+    @pytest.mark.parametrize("degree", [-33, -100, 1025])
+    def test_degree_outside_the_parser_bounds_is_invalid(self, degree):
+        """FastTransfer refuses --degree below -32 or above 1024 (#7)."""
+        with pytest.raises(ValidationError) as exc_info:
+            TransferOptions(degree=degree)
+        assert "between -32 and 1024" in str(exc_info.value)
 
     def test_data_driven_requires_distribute_key(self):
         """Test that DataDriven method requires distribute_key_column."""
@@ -408,6 +423,7 @@ class TestTransferRequest:
                     "type": "msbulk",
                     "server": "localhost",
                     "database": "targetdb",
+                    "schema": "dbo",
                     "table": "users",
                     "user": "user",
                     "password": "pass",
@@ -436,6 +452,7 @@ class TestTransferRequest:
                     "type": "msbulk",
                     "server": "localhost",
                     "database": "targetdb",
+                    "schema": "dbo",
                     "table": "users",
                     "user": "user",
                     "password": "pass",
@@ -458,6 +475,7 @@ class TestTransferRequest:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -481,12 +499,24 @@ class TestTransferRequest:
                     "type": "msbulk",
                     "server": "localhost",
                     "database": "targetdb",
+                    "schema": "dbo",
                     "user": "user",
                     "password": "pass",
                 },
             )
         errors = exc_info.value.errors()
         assert any("table" in str(e) for e in errors)
+
+    def test_target_requires_schema(self):
+        """FastTransfer stops with 'Target Schema is mandatory' without --targetschema (#6)."""
+        with pytest.raises(ValidationError) as exc_info:
+            TransferRequest(
+                source={"type": "pgsql", "server": "localhost:5432", "database": "sourcedb",
+                        "table": "users", "user": "user", "password": "pass"},
+                target={"type": "msbulk", "server": "localhost", "database": "targetdb",
+                        "table": "users", "user": "user", "password": "pass"},
+            )
+        assert "Target must specify 'schema'" in str(exc_info.value)
 
     def test_ctid_only_with_postgresql(self):
         """Test that Ctid method only works with PostgreSQL sources."""
@@ -504,6 +534,7 @@ class TestTransferRequest:
                     "type": "msbulk",
                     "server": "localhost",
                     "database": "targetdb",
+                    "schema": "dbo",
                     "table": "users",
                     "user": "user",
                     "password": "pass",
@@ -529,6 +560,7 @@ class TestTransferRequest:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -553,6 +585,7 @@ class TestTransferRequest:
                     "type": "msbulk",
                     "server": "localhost",
                     "database": "targetdb",
+                    "schema": "dbo",
                     "table": "users",
                     "user": "user",
                     "password": "pass",
@@ -578,6 +611,7 @@ class TestTransferRequest:
                 "type": "orabulk",
                 "server": "localhost:1521",
                 "database": "ORCL2",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -602,6 +636,7 @@ class TestTransferRequest:
                     "type": "nzbulk",
                     "server": "localhost",
                     "database": "nzdb2",
+                    "schema": "dbo",
                     "table": "data",
                     "user": "user",
                     "password": "pass",
@@ -627,6 +662,7 @@ class TestTransferRequest:
                     "type": "msbulk",
                     "server": "localhost",
                     "database": "targetdb",
+                    "schema": "dbo",
                     "table": "users",
                     "user": "user",
                     "password": "pass",
@@ -652,6 +688,7 @@ class TestTransferRequest:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -676,6 +713,7 @@ class TestTransferRequest:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -683,54 +721,6 @@ class TestTransferRequest:
             options={"method": "Physloc"},
         )
         assert request.options.method == ParallelismMethod.PHYSLOC
-
-
-class TestConnectionValidationRequest:
-    """Tests for ConnectionValidationRequest model."""
-
-    def test_valid_source_validation_request(self):
-        """Test valid source validation request."""
-        request = ConnectionValidationRequest(
-            connection={
-                "type": "pgsql",
-                "server": "localhost:5432",
-                "database": "testdb",
-                "user": "user",
-                "password": "pass",
-            },
-            side="source",
-        )
-        assert request.side == "source"
-
-    def test_valid_target_validation_request(self):
-        """Test valid target validation request."""
-        request = ConnectionValidationRequest(
-            connection={
-                "type": "msbulk",
-                "server": "localhost",
-                "database": "testdb",
-                "user": "user",
-                "password": "pass",
-            },
-            side="target",
-        )
-        assert request.side == "target"
-
-    def test_invalid_side(self):
-        """Test that invalid side is rejected."""
-        with pytest.raises(ValidationError) as exc_info:
-            ConnectionValidationRequest(
-                connection={
-                    "type": "pgsql",
-                    "server": "localhost:5432",
-                    "database": "testdb",
-                    "user": "user",
-                    "password": "pass",
-                },
-                side="invalid",
-            )
-        errors = exc_info.value.errors()
-        assert any("side" in str(e) for e in errors)
 
 
 class TestParallelismSuggestionRequest:

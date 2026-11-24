@@ -26,7 +26,7 @@ async def test_preview_success_returns_structured_command():
     content, structured = await handler("fasttransfer_preview_transfer", {
         "source": {"type": "pgsql", "database": "srcdb", "table": "orders",
                    "user": "u", "password": "secret123"},
-        "target": {"type": "pgsql", "database": "dstdb", "table": "orders",
+        "target": {"type": "pgsql", "database": "dstdb", "schema": "public", "table": "orders",
                    "user": "u2", "password": "secret456"},
     })
     assert structured["status"] == "ok"

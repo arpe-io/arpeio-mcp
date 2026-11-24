@@ -18,10 +18,17 @@
 
 - **FastTransfer workflow tips**: the `pgcopy` target tip says that the lost fractional seconds and the `bytea` values written as `System.Byte[]` are fixed in 1.1 (the `timestamptz` shift is not); the `adbc_db2` target tip says that from 1.1 each stream of a parallel load commits every 50,000 rows; the ADBC tips say that the target table must exist unless `load_mode` is `Create`.
 - The FastTransfer `server` descriptions give the SQL Server forms (`host`, `host:port`, `host,port`, `host\INSTANCE`, `host\INSTANCE,port`).
+- Removed the FastTransfer and FastBCP `handle_validate_connection` handlers and their `ConnectionValidationRequest` models (#9): no tool has routed to them since the `*_validate_connection` tools were removed in 0.3.0.
 
 ### Fixed
 
 - **FastTransfer `file_input` description**: `--fileinput` is a file holding the SQL query to run on the source, not a data file to import. Files are imported through a `duckdbstream` source and a query.
+- **Execute tools (FastTransfer, FastBCP, LakeXpress, MigratorXpress) ran another command than the one previewed** (#4): the preview joined the argv with spaces and the execute tool split it again with POSIX rules, so backslashes were dropped (`D:\MSSQL\BACKUPS` became `D:MSSQLBACKUPS`, `host\SS2025` became `hostSS2025`) and a query was cut at each space. The preview now quotes `command_string` with `shlex.join`, and the execute tools take the `command` list as well as the string.
+- **FastTransfer `log_level`** (#5): `fatal`, which FastTransfer refuses, is replaced by `verbose`, which it accepts (`error`, `warning`, `information`, `debug`, `verbose`).
+- **FastTransfer target `schema` is required** (#6): it was described as optional ("Omit to use the database default schema"), but FastTransfer stops with `Target Schema is mandatory` without `--targetschema`. The preview now refuses a target without `schema`, and the tool schema lists it as required.
+- **FastTransfer `degree` bounds** (#7): the preview accepted any negative value and refused `1024`; it now takes `-32` to `1024`, the bounds of the FastTransfer parser, and the tool schema gives them as `minimum` / `maximum`.
+- **FastTransfer preview explanation for `file_input`** (#8): it said "Import file ... into <database>"; it now says that the query read from that file is run on the source.
+- **Test suite on Windows** (#10): 8 tests failed. Paths are compared as `Path` objects or parts instead of `/`-separated strings, and the four "non-executable binary" tests are skipped on Windows, which has no execute permission bit.
 
 ## [0.3.14] - 2026-11-19
 

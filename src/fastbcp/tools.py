@@ -6,7 +6,6 @@ for FastBCP MCP tools, extracted from the original server.py.
 """
 
 import logging
-import shlex
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -15,7 +14,6 @@ from pydantic import ValidationError
 
 from .validators import (
     ExportRequest,
-    ConnectionValidationRequest,
     ParallelismSuggestionRequest,
     SourceConnectionType,
     OutputFormat,
@@ -29,6 +27,7 @@ from .validators import (
     BACKUP_TYPES,
 )
 from src.base.error_patterns import diagnose_cli_error
+from src.base.command_line import command_input_schema, join_command, parse_command
 from src.base.structured import make_output_schema, respond
 from .command_builder import CommandBuilder, FastBCPError, get_supported_formats, suggest_parallelism_method
 from .version import check_version_compatibility
@@ -47,7 +46,7 @@ PREVIEW_OUTPUT_SCHEMA = make_output_schema({
     },
     "command_string": {
         "type": "string",
-        "description": "The argv joined into one command string (real credentials).",
+        "description": "The argv quoted into one string (POSIX shell quoting, real credentials), accepted as-is by the execute tool.",
     },
     "command_display": {
         "type": "string",
@@ -374,7 +373,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             description=(
                 "Execute a FastBCP export command that was previously built by fastbcp_preview_export. "
                 "Requires confirmation=true as a safety gate. "
-                "Does NOT build the command — the command string must come from a prior fastbcp_preview_export call. "
+                "Does NOT build the command — the command must come from a prior fastbcp_preview_export call. "
                 "Will fail if the FastBCP binary is not installed."
             ),
             annotations=ToolAnnotations(
@@ -387,10 +386,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The full command string from fastbcp_preview_export output (with actual passwords, not the masked version).",
-                    },
+                    "command": command_input_schema("fastbcp_preview_export"),
                     "confirmation": {
                         "type": "boolean",
                         "description": "Safety gate — must be true to execute. Confirms the user has reviewed the command from fastbcp_preview_export.",
@@ -595,7 +591,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "",
                 "## Full command for execution:",
                 "```",
-                " ".join(command),
+                join_command(command),
                 "```",
             ]
 
@@ -603,7 +599,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "status": "ok",
                 "tool": "fastbcp_preview_export",
                 "command": command,
-                "command_string": " ".join(command),
+                "command_string": join_command(command),
                 "command_display": display_command,
                 "explanation": explanation,
                 "warnings": version_warnings,
@@ -677,17 +673,17 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             )
 
         # Get command
-        command_str = arguments.get("command", "")
-        if not command_str:
+        raw_command = arguments.get("command", "")
+        if not raw_command:
             return respond(
                 "Error: No command provided. Please provide the command from fastbcp_preview_export.",
                 {"status": "error", "tool": "fastbcp_execute_export",
                  "error": "No command provided."},
             )
 
-        # Parse command string into list
+        # The command comes as the argv list or as the quoted command_string
         try:
-            command = shlex.split(command_str)
+            command = parse_command(raw_command)
         except ValueError as e:
             return respond(
                 f"Error parsing command: {str(e)}",
@@ -759,95 +755,6 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "tool": "fastbcp_execute_export",
                 "error": str(e),
             })
-
-    async def handle_validate_connection(arguments: Dict[str, Any]) -> list[TextContent]:
-        """Handle fastbcp_validate_connection tool."""
-        try:
-            # Validate request
-            request = ConnectionValidationRequest(**arguments)
-
-            # Build validation response
-            connection = request.connection
-            issues = []
-
-            backup = connection.type in BACKUP_TYPES
-
-            # Check for required fields based on connection type
-            if (
-                not backup
-                and not connection.trusted_auth
-                and not connection.connect_string
-                and not connection.dsn
-            ):
-                if not connection.user:
-                    issues.append(
-                        "- Username is required (unless using trusted authentication, connect_string, or dsn)"
-                    )
-
-            # Check server format (only if server is provided). Backup types
-            # take a directory; adbc_db2 defaults to port 50000.
-            if (
-                connection.server
-                and not backup
-                and connection.type != "adbc_db2"
-                and ":" not in connection.server
-                and "\\" not in connection.server
-            ):
-                issues.append(
-                    f"- Server '{connection.server}' may need port (e.g., localhost:5432) or instance name"
-                )
-
-            if issues:
-                response = [
-                    f"# Connection Validation - {request.side.upper()}",
-                    "",
-                    "**Issues Found:**",
-                    "",
-                    *issues,
-                    "",
-                    "Note: This is a parameter check only. Actual connectivity is tested during export execution.",
-                ]
-            else:
-                auth_method = "Trusted"
-                if backup:
-                    auth_method = (
-                        "Private key file (encrypted backup)" if connection.user
-                        else "None (backup files)"
-                    )
-                elif connection.connect_string:
-                    auth_method = "Connection String"
-                elif connection.dsn:
-                    auth_method = "DSN"
-                elif connection.trusted_auth:
-                    auth_method = "Trusted"
-                else:
-                    auth_method = "Username/Password"
-
-                response = [
-                    f"# Connection Validation - {request.side.upper()}",
-                    "",
-                    "**All required parameters present**",
-                    "",
-                    f"- Connection Type: {connection.type}",
-                    f"- Server: {connection.server or '(not specified)'}",
-                    f"- Database: {connection.database}",
-                    f"- Authentication: {auth_method}",
-                    "",
-                    "Note: This validates parameters only. Actual connectivity will be tested during export.",
-                ]
-
-            return [TextContent(type="text", text="\n".join(response))]
-
-        except ValidationError as e:
-            error_msg = ["# Validation Error", ""]
-            for error in e.errors():
-                field = " -> ".join(str(x) for x in error["loc"])
-                error_msg.append(f"- **{field}**: {error['msg']}")
-            tips = _suggest_next_steps(e.errors())
-            if tips:
-                error_msg.append("")
-                error_msg.extend(tips)
-            return [TextContent(type="text", text="\n".join(error_msg))]
 
     async def handle_list_formats(arguments: Dict[str, Any]) -> list[TextContent]:
         """Handle fastbcp_list_formats tool."""
