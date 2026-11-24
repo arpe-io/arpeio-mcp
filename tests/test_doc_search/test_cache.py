@@ -20,7 +20,7 @@ class TestGetCachePath:
     def test_versioned_path(self):
         path = get_cache_path("fastbcp", "0.30")
         assert path.name == "fastbcp_0.30.json.gz"
-        assert str(path).endswith(".cache/arpeio-mcp/fastbcp_0.30.json.gz")
+        assert path.parts[-3:] == (".cache", "arpeio-mcp", "fastbcp_0.30.json.gz")
 
     def test_unversioned_path(self):
         path = get_cache_path("blog")

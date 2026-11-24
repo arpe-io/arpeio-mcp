@@ -28,6 +28,7 @@
 - **FastTransfer target `schema` is required** (#6): it was described as optional ("Omit to use the database default schema"), but FastTransfer stops with `Target Schema is mandatory` without `--targetschema`. The preview now refuses a target without `schema`, and the tool schema lists it as required.
 - **FastTransfer `degree` bounds** (#7): the preview accepted any negative value and refused `1024`; it now takes `-32` to `1024`, the bounds of the FastTransfer parser, and the tool schema gives them as `minimum` / `maximum`.
 - **FastTransfer preview explanation for `file_input`** (#8): it said "Import file ... into <database>"; it now says that the query read from that file is run on the source.
+- **Test suite on Windows** (#10): 8 tests failed. Paths are compared as `Path` objects or parts instead of `/`-separated strings, and the four "non-executable binary" tests are skipped on Windows, which has no execute permission bit.
 
 ## [0.3.14] - 2026-11-19
 

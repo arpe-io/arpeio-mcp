@@ -3,6 +3,7 @@
 from pathlib import Path
 from unittest.mock import Mock, patch
 import subprocess
+import sys
 
 import pytest
 
@@ -15,6 +16,9 @@ from src.migratorxpress.command_builder import (
 from src.base.command_builder import ArpeToolError
 from src.migratorxpress.validators import MigrationParams
 from src.base.version_detector import ToolVersion
+
+# Windows has no execute permission bit: os.access(path, os.X_OK) is true for any existing file.
+NO_EXECUTE_BIT = pytest.mark.skipif(sys.platform == "win32", reason="no execute permission bit on Windows")
 
 
 @pytest.fixture
@@ -95,6 +99,7 @@ class TestCommandBuilder:
         builder = CommandBuilder("/nonexistent/path/MigratorXpress")
         assert builder._preview_only is True
 
+    @NO_EXECUTE_BIT
     def test_init_with_non_executable_binary_sets_preview_only(self, tmp_path):
         """Test initialization with non-executable binary enters preview-only mode."""
         binary = tmp_path / "MigratorXpress"
@@ -136,7 +141,7 @@ class TestCommandBuilder:
 
         params = MigrationParams(**_minimal_params())
         command = builder.build_command(params)
-        assert command[0] == "/nonexistent/path/MigratorXpress"
+        assert command[0] == str(Path("/nonexistent/path/MigratorXpress"))
         assert "-a" in command
 
     def test_build_command_minimal(self, command_builder):
