@@ -7,7 +7,6 @@ extracted from the original server.py for use in the unified arpeio-mcp server.
 
 import json
 import logging
-import shlex
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -35,6 +34,7 @@ from .command_builder import (
 )
 from .version import check_version_compatibility
 from src.base.error_patterns import diagnose_cli_error
+from src.base.command_line import command_input_schema, join_command, parse_command
 from src.base.structured import make_output_schema, respond
 
 
@@ -51,7 +51,7 @@ PREVIEW_OUTPUT_SCHEMA = make_output_schema({
     },
     "command_string": {
         "type": "string",
-        "description": "The argv joined into one command string.",
+        "description": "The argv quoted into one string (POSIX shell quoting), accepted as-is by the execute tool.",
     },
     "command_display": {
         "type": "string",
@@ -1137,7 +1137,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             description=(
                 "Execute a LakeXpress command that was previously built by lakexpress_preview_command. "
                 "Requires confirmation=true as a safety gate. "
-                "The command string must come from a prior lakexpress_preview_command call. "
+                "The command must come from a prior lakexpress_preview_command call. "
                 "Will fail if the LakeXpress binary is not installed."
             ),
             annotations=ToolAnnotations(
@@ -1150,10 +1150,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The exact command string from a prior lakexpress_preview_command call. Must be passed as-is without modification.",
-                    },
+                    "command": command_input_schema("lakexpress_preview_command"),
                     "confirmation": {
                         "type": "boolean",
                         "description": "Safety gate: must be true to execute. Set to true only after the user has reviewed the previewed command.",
@@ -1299,7 +1296,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                 "",
                 "## Full command for execution:",
                 "```",
-                " ".join(command),
+                join_command(command),
                 "```",
             ]
 
@@ -1307,7 +1304,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
                 "status": "ok",
                 "tool": "lakexpress_preview_command",
                 "command": command,
-                "command_string": " ".join(command),
+                "command_string": join_command(command),
                 "command_display": display_command,
                 "explanation": explanation,
                 "warnings": version_warnings,
@@ -1381,17 +1378,17 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[List[To
             )
 
         # Get command
-        command_str = arguments.get("command", "")
-        if not command_str:
+        raw_command = arguments.get("command", "")
+        if not raw_command:
             return respond(
                 "Error: No command provided. Please provide the command from lakexpress_preview_command.",
                 {"status": "error", "tool": "lakexpress_execute_command",
                  "error": "No command provided."},
             )
 
-        # Parse command string into list
+        # The command comes as the argv list or as the quoted command_string
         try:
-            command = shlex.split(command_str)
+            command = parse_command(raw_command)
         except ValueError as e:
             return respond(
                 f"Error parsing command: {str(e)}",

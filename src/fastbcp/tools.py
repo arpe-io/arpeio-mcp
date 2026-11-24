@@ -6,7 +6,6 @@ for FastBCP MCP tools, extracted from the original server.py.
 """
 
 import logging
-import shlex
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -29,6 +28,7 @@ from .validators import (
     BACKUP_TYPES,
 )
 from src.base.error_patterns import diagnose_cli_error
+from src.base.command_line import command_input_schema, join_command, parse_command
 from src.base.structured import make_output_schema, respond
 from .command_builder import CommandBuilder, FastBCPError, get_supported_formats, suggest_parallelism_method
 from .version import check_version_compatibility
@@ -47,7 +47,7 @@ PREVIEW_OUTPUT_SCHEMA = make_output_schema({
     },
     "command_string": {
         "type": "string",
-        "description": "The argv joined into one command string (real credentials).",
+        "description": "The argv quoted into one string (POSIX shell quoting, real credentials), accepted as-is by the execute tool.",
     },
     "command_display": {
         "type": "string",
@@ -374,7 +374,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             description=(
                 "Execute a FastBCP export command that was previously built by fastbcp_preview_export. "
                 "Requires confirmation=true as a safety gate. "
-                "Does NOT build the command — the command string must come from a prior fastbcp_preview_export call. "
+                "Does NOT build the command — the command must come from a prior fastbcp_preview_export call. "
                 "Will fail if the FastBCP binary is not installed."
             ),
             annotations=ToolAnnotations(
@@ -387,10 +387,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The full command string from fastbcp_preview_export output (with actual passwords, not the masked version).",
-                    },
+                    "command": command_input_schema("fastbcp_preview_export"),
                     "confirmation": {
                         "type": "boolean",
                         "description": "Safety gate — must be true to execute. Confirms the user has reviewed the command from fastbcp_preview_export.",
@@ -595,7 +592,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "",
                 "## Full command for execution:",
                 "```",
-                " ".join(command),
+                join_command(command),
                 "```",
             ]
 
@@ -603,7 +600,7 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "status": "ok",
                 "tool": "fastbcp_preview_export",
                 "command": command,
-                "command_string": " ".join(command),
+                "command_string": join_command(command),
                 "command_display": display_command,
                 "explanation": explanation,
                 "warnings": version_warnings,
@@ -677,17 +674,17 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
             )
 
         # Get command
-        command_str = arguments.get("command", "")
-        if not command_str:
+        raw_command = arguments.get("command", "")
+        if not raw_command:
             return respond(
                 "Error: No command provided. Please provide the command from fastbcp_preview_export.",
                 {"status": "error", "tool": "fastbcp_execute_export",
                  "error": "No command provided."},
             )
 
-        # Parse command string into list
+        # The command comes as the argv list or as the quoted command_string
         try:
-            command = shlex.split(command_str)
+            command = parse_command(raw_command)
         except ValueError as e:
             return respond(
                 f"Error parsing command: {str(e)}",

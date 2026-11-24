@@ -6,7 +6,6 @@ designed to be aggregated by a unified MCP server.
 """
 
 import logging
-import shlex
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Callable, Awaitable
 
@@ -35,6 +34,7 @@ from .validators import (
 )
 from .version import check_version_compatibility
 from src.base.error_patterns import diagnose_cli_error
+from src.base.command_line import command_input_schema, join_command, parse_command
 from src.base.structured import make_output_schema, respond
 
 
@@ -51,7 +51,7 @@ PREVIEW_OUTPUT_SCHEMA = make_output_schema({
     },
     "command_string": {
         "type": "string",
-        "description": "The argv joined into one command string (real credentials).",
+        "description": "The argv quoted into one string (POSIX shell quoting, real credentials), accepted as-is by the execute tool.",
     },
     "command_display": {
         "type": "string",
@@ -305,7 +305,7 @@ def create_tools(
             description=(
                 "Execute a FastTransfer command that was previously built by fasttransfer_preview_transfer. "
                 "Requires confirmation=true as a safety gate. "
-                "Does NOT build the command — the command string must come from a prior fasttransfer_preview_transfer call. "
+                "Does NOT build the command — the command must come from a prior fasttransfer_preview_transfer call. "
                 "Will fail if the FastTransfer binary is not installed."
             ),
             annotations=ToolAnnotations(
@@ -318,10 +318,7 @@ def create_tools(
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The full command string from fasttransfer_preview_transfer output (the unmasked version with actual passwords). Do not modify this string.",
-                    },
+                    "command": command_input_schema("fasttransfer_preview_transfer"),
                     "confirmation": {
                         "type": "boolean",
                         "description": "Safety gate. Must be explicitly set to true to execute. false or omitted = execution is blocked. Always confirm with the user before setting to true.",
@@ -527,7 +524,7 @@ def create_tools(
                 "",
                 "## Full command for execution:",
                 "```",
-                " ".join(command),
+                join_command(command),
                 "```",
             ]
 
@@ -535,7 +532,7 @@ def create_tools(
                 "status": "ok",
                 "tool": "fasttransfer_preview_transfer",
                 "command": command,
-                "command_string": " ".join(command),
+                "command_string": join_command(command),
                 "command_display": display_command,
                 "explanation": explanation,
                 "warnings": version_warnings,
@@ -609,17 +606,17 @@ def create_tools(
             )
 
         # Get command
-        command_str = arguments.get("command", "")
-        if not command_str:
+        raw_command = arguments.get("command", "")
+        if not raw_command:
             return respond(
                 "Error: No command provided. Please provide the command from fasttransfer_preview_transfer.",
                 {"status": "error", "tool": "fasttransfer_execute_transfer",
                  "error": "No command provided."},
             )
 
-        # Parse command string into list
+        # The command comes as the argv list or as the quoted command_string
         try:
-            command = shlex.split(command_str)
+            command = parse_command(raw_command)
         except ValueError as e:
             return respond(
                 f"Error parsing command: {str(e)}",

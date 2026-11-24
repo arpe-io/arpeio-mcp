@@ -6,7 +6,6 @@ MigratorXpress tools, to be registered with a unified MCP server.
 """
 
 import json
-import shlex
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Callable, Awaitable
@@ -32,6 +31,7 @@ from .command_builder import (
 )
 from .version import check_version_compatibility
 from src.base.error_patterns import diagnose_cli_error
+from src.base.command_line import command_input_schema, join_command, parse_command
 from src.base.structured import make_output_schema, respond
 
 
@@ -48,7 +48,7 @@ PREVIEW_OUTPUT_SCHEMA = make_output_schema({
     },
     "command_string": {
         "type": "string",
-        "description": "The argv joined into one command string (real credentials).",
+        "description": "The argv quoted into one string (POSIX shell quoting, real credentials), accepted as-is by the execute tool.",
     },
     "command_display": {
         "type": "string",
@@ -458,7 +458,7 @@ def create_tools(
             description=(
                 "Execute a MigratorXpress command that was previously built by migratorxpress_preview_command. "
                 "Requires confirmation=true as a safety gate. "
-                "The command string must come from a prior migratorxpress_preview_command call. "
+                "The command must come from a prior migratorxpress_preview_command call. "
                 "Will fail if the MigratorXpress binary is not installed."
             ),
             annotations=ToolAnnotations(
@@ -471,10 +471,7 @@ def create_tools(
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The full MigratorXpress command string copied from the migratorxpress_preview_command output (space-separated arguments).",
-                    },
+                    "command": command_input_schema("migratorxpress_preview_command"),
                     "confirmation": {
                         "type": "boolean",
                         "description": "Safety gate: must be set to true to allow execution. Confirms the user has reviewed the previewed command.",
@@ -650,7 +647,7 @@ def create_tools(
                 "",
                 "## Full command for execution:",
                 "```",
-                " ".join(command),
+                join_command(command),
                 "```",
             ]
 
@@ -658,7 +655,7 @@ def create_tools(
                 "status": "ok",
                 "tool": "migratorxpress_preview_command",
                 "command": command,
-                "command_string": " ".join(command),
+                "command_string": join_command(command),
                 "command_display": display_command,
                 "explanation": explanation,
                 "warnings": version_warnings,
@@ -735,17 +732,17 @@ def create_tools(
             )
 
         # Get command
-        command_str = arguments.get("command", "")
-        if not command_str:
+        raw_command = arguments.get("command", "")
+        if not raw_command:
             return respond(
                 "Error: No command provided. Please provide the command from preview_command.",
                 {"status": "error", "tool": "migratorxpress_execute_command",
                  "error": "No command provided."},
             )
 
-        # Parse command string into list
+        # The command comes as the argv list or as the quoted command_string
         try:
-            command = shlex.split(command_str)
+            command = parse_command(raw_command)
         except ValueError as e:
             return respond(
                 f"Error parsing command: {str(e)}",
