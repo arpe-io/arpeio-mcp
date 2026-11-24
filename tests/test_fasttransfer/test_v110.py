@@ -899,15 +899,15 @@ class TestDocVersions:
         assert FASTTRANSFER_DOC_VERSIONS[-1] == "1.1"
         assert "1.0" in FASTTRANSFER_DOC_VERSIONS
 
-    def test_11_has_its_own_path_and_10_stays_at_latest(self):
-        """The site publishes 1.1 at /1.1/ and keeps 1.0 as its "latest" version."""
+    def test_11_served_at_latest_and_10_at_its_own_path(self):
+        """1.1 is the "latest" version of the site; 1.0 moved to /1.0/."""
         aliases = DOC_URL_VERSION_ALIASES["fasttransfer"]
-        assert aliases == {"1.0": "latest"}
+        assert aliases == {"1.1": "latest"}
         assert DOC_URLS["fasttransfer"].format(version=aliases.get("1.1", "1.1")) == (
-            "https://fasttransfer-docs.arpe.io/1.1/sitemap"
+            "https://fasttransfer-docs.arpe.io/latest/sitemap"
         )
         assert DOC_URLS["fasttransfer"].format(version=aliases.get("1.0", "1.0")) == (
-            "https://fasttransfer-docs.arpe.io/latest/sitemap"
+            "https://fasttransfer-docs.arpe.io/1.0/sitemap"
         )
 
     @pytest.mark.parametrize(

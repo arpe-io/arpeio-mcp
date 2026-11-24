@@ -41,16 +41,16 @@ DOC_URLS = {
 }
 
 # Doc versions served under a different URL path. The current FastBCP and
-# FastTransfer releases are published at /latest/ only (/1.7/ and /1.0/ return
+# FastTransfer releases are published at /latest/ only (/1.7/ returns
 # 404; FastTransfer 0.18 moved to /0.18/ when 1.0 was published), and so are
 # MigratorXpress 0.7 and 0.8 (/0.7/ and /0.8/ return 404) and LakeXpress 0.6;
 # move these aliases forward when a newer version becomes "latest".
-# FastTransfer 1.1 is published at /1.1/ while the site keeps 1.0 as its
-# "latest" version: when 1.1 becomes "latest", alias "1.1" instead of "1.0"
-# (1.0 then gets a path of its own).
+# FastTransfer 1.1 became "latest" on the docs site when 1.1.0 was released
+# (2026-11-24): 1.0 moved to /1.0/, and /1.1/, the path of the 1.1 preview,
+# redirects to /latest/.
 DOC_URL_VERSION_ALIASES = {
     "fastbcp": {"1.7": "latest"},
-    "fasttransfer": {"1.0": "latest"},
+    "fasttransfer": {"1.1": "latest"},
     "lakexpress": {"0.6": "latest"},
     "migratorxpress": {"0.7": "latest", "0.8": "latest"},
 }

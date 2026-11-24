@@ -890,11 +890,11 @@ class TestDocVersions:
         assert "1.0" in FASTTRANSFER_DOC_VERSIONS
         assert "0.18" in FASTTRANSFER_DOC_VERSIONS
 
-    def test_10_served_at_latest_and_018_at_its_own_path(self):
+    def test_10_and_018_at_their_own_paths(self):
         aliases = DOC_URL_VERSION_ALIASES["fasttransfer"]
-        assert aliases == {"1.0": "latest"}
+        assert aliases == {"1.1": "latest"}
         assert DOC_URLS["fasttransfer"].format(version=aliases.get("1.0", "1.0")) == (
-            "https://fasttransfer-docs.arpe.io/latest/sitemap"
+            "https://fasttransfer-docs.arpe.io/1.0/sitemap"
         )
         assert DOC_URLS["fasttransfer"].format(version=aliases.get("0.18", "0.18")) == (
             "https://fasttransfer-docs.arpe.io/0.18/sitemap"
