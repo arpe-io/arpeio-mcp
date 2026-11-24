@@ -1299,8 +1299,14 @@ def _build_transfer_explanation(request: TransferRequest) -> str:
             f"(FASTTRANSFER_INDEX_DIR sets the index directory)"
         )
     elif request.source.file_input:
+        server_info = (
+            f" ({request.source.server}/{request.source.database})"
+            if request.source.server
+            else f" ({request.source.database})"
+        )
         parts.append(
-            f"Import file '{request.source.file_input}' via {request.source.type} into {request.source.database}"
+            f"Execute on {request.source.type}{server_info} the query read from file "
+            f"'{request.source.file_input}'"
         )
     elif request.source.query and request.source.table:
         source_table = (
