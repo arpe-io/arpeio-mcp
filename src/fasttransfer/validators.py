@@ -731,21 +731,6 @@ class TransferRequest(BaseModel):
         return self
 
 
-class ConnectionValidationRequest(BaseModel):
-    """Request to validate a database connection."""
-
-    connection: ConnectionConfig = Field(..., description="Connection to validate")
-    side: str = Field(..., description="Connection side: 'source' or 'target'")
-
-    @field_validator("side")
-    @classmethod
-    def validate_side(cls, v):
-        """Ensure side is either source or target."""
-        if v not in ["source", "target"]:
-            raise ValueError("Side must be 'source' or 'target'")
-        return v
-
-
 class ParallelismSuggestionRequest(BaseModel):
     """Request for parallelism method suggestion."""
 

@@ -13,7 +13,6 @@ from src.fasttransfer.validators import (
     ConnectionConfig,
     TransferOptions,
     TransferRequest,
-    ConnectionValidationRequest,
     ParallelismSuggestionRequest,
 )
 
@@ -722,54 +721,6 @@ class TestTransferRequest:
             options={"method": "Physloc"},
         )
         assert request.options.method == ParallelismMethod.PHYSLOC
-
-
-class TestConnectionValidationRequest:
-    """Tests for ConnectionValidationRequest model."""
-
-    def test_valid_source_validation_request(self):
-        """Test valid source validation request."""
-        request = ConnectionValidationRequest(
-            connection={
-                "type": "pgsql",
-                "server": "localhost:5432",
-                "database": "testdb",
-                "user": "user",
-                "password": "pass",
-            },
-            side="source",
-        )
-        assert request.side == "source"
-
-    def test_valid_target_validation_request(self):
-        """Test valid target validation request."""
-        request = ConnectionValidationRequest(
-            connection={
-                "type": "msbulk",
-                "server": "localhost",
-                "database": "testdb",
-                "user": "user",
-                "password": "pass",
-            },
-            side="target",
-        )
-        assert request.side == "target"
-
-    def test_invalid_side(self):
-        """Test that invalid side is rejected."""
-        with pytest.raises(ValidationError) as exc_info:
-            ConnectionValidationRequest(
-                connection={
-                    "type": "pgsql",
-                    "server": "localhost:5432",
-                    "database": "testdb",
-                    "user": "user",
-                    "password": "pass",
-                },
-                side="invalid",
-            )
-        errors = exc_info.value.errors()
-        assert any("side" in str(e) for e in errors)
 
 
 class TestParallelismSuggestionRequest:

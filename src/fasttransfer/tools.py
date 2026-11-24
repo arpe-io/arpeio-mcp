@@ -23,7 +23,6 @@ from .validators import (
     PHYSICAL_METHODS,
     PHYSICAL_STRATEGIES,
     TransferRequest,
-    ConnectionValidationRequest,
     ParallelismSuggestionRequest,
     SourceConnectionType,
     TargetConnectionType,
@@ -692,84 +691,6 @@ def create_tools(
                 "tool": "fasttransfer_execute_transfer",
                 "error": str(e),
             })
-
-    async def handle_validate_connection(arguments: Dict[str, Any]) -> list[TextContent]:
-        """Handle fasttransfer_validate_connection tool."""
-        try:
-            # Validate request
-            request = ConnectionValidationRequest(**arguments)
-
-            # Build validation response
-            connection = request.connection
-            issues = []
-
-            # Check for required fields based on connection type
-            if (
-                not connection.trusted_auth
-                and not connection.connect_string
-                and not connection.dsn
-            ):
-                if not connection.user:
-                    issues.append(
-                        "- Username is required (unless using trusted authentication, connect_string, or dsn)"
-                    )
-
-            # Check server format (only if server is provided)
-            if (
-                connection.server
-                and ":" not in connection.server
-                and "\\" not in connection.server
-            ):
-                issues.append(
-                    f"- Server '{connection.server}' may need port (e.g., localhost:5432) or instance name"
-                )
-
-            if issues:
-                response = [
-                    f"# Connection Validation - {request.side.upper()}",
-                    "",
-                    "**Issues Found:**",
-                    "",
-                    *issues,
-                    "",
-                    "Note: This is a parameter check only. Actual connectivity is tested during transfer execution.",
-                ]
-            else:
-                auth_method = "Trusted"
-                if connection.connect_string:
-                    auth_method = "Connection String"
-                elif connection.dsn:
-                    auth_method = "DSN"
-                elif connection.trusted_auth:
-                    auth_method = "Trusted"
-                else:
-                    auth_method = "Username/Password"
-
-                response = [
-                    f"# Connection Validation - {request.side.upper()}",
-                    "",
-                    "**All required parameters present**",
-                    "",
-                    f"- Connection Type: {connection.type}",
-                    f"- Server: {connection.server or '(not specified)'}",
-                    f"- Database: {connection.database}",
-                    f"- Authentication: {auth_method}",
-                    "",
-                    "Note: This validates parameters only. Actual connectivity will be tested during transfer.",
-                ]
-
-            return [TextContent(type="text", text="\n".join(response))]
-
-        except ValidationError as e:
-            error_msg = ["# Validation Error", ""]
-            for error in e.errors():
-                field = " -> ".join(str(x) for x in error["loc"])
-                error_msg.append(f"- **{field}**: {error['msg']}")
-            tips = _suggest_next_steps(e.errors())
-            if tips:
-                error_msg.append("")
-                error_msg.extend(tips)
-            return [TextContent(type="text", text="\n".join(error_msg))]
 
     async def handle_list_combinations(arguments: Dict[str, Any]) -> list[TextContent]:
         """Handle fasttransfer_list_combinations tool."""

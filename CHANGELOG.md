@@ -18,6 +18,7 @@
 
 - **FastTransfer workflow tips**: the `pgcopy` target tip says that the lost fractional seconds and the `bytea` values written as `System.Byte[]` are fixed in 1.1 (the `timestamptz` shift is not); the `adbc_db2` target tip says that from 1.1 each stream of a parallel load commits every 50,000 rows; the ADBC tips say that the target table must exist unless `load_mode` is `Create`.
 - The FastTransfer `server` descriptions give the SQL Server forms (`host`, `host:port`, `host,port`, `host\INSTANCE`, `host\INSTANCE,port`).
+- Removed the FastTransfer and FastBCP `handle_validate_connection` handlers and their `ConnectionValidationRequest` models (#9): no tool has routed to them since the `*_validate_connection` tools were removed in 0.3.0.
 
 ### Fixed
 

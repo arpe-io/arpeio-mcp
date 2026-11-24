@@ -14,7 +14,6 @@ from pydantic import ValidationError
 
 from .validators import (
     ExportRequest,
-    ConnectionValidationRequest,
     ParallelismSuggestionRequest,
     SourceConnectionType,
     OutputFormat,
@@ -756,95 +755,6 @@ def create_tools(command_builder: CommandBuilder, config: dict) -> Tuple[list, A
                 "tool": "fastbcp_execute_export",
                 "error": str(e),
             })
-
-    async def handle_validate_connection(arguments: Dict[str, Any]) -> list[TextContent]:
-        """Handle fastbcp_validate_connection tool."""
-        try:
-            # Validate request
-            request = ConnectionValidationRequest(**arguments)
-
-            # Build validation response
-            connection = request.connection
-            issues = []
-
-            backup = connection.type in BACKUP_TYPES
-
-            # Check for required fields based on connection type
-            if (
-                not backup
-                and not connection.trusted_auth
-                and not connection.connect_string
-                and not connection.dsn
-            ):
-                if not connection.user:
-                    issues.append(
-                        "- Username is required (unless using trusted authentication, connect_string, or dsn)"
-                    )
-
-            # Check server format (only if server is provided). Backup types
-            # take a directory; adbc_db2 defaults to port 50000.
-            if (
-                connection.server
-                and not backup
-                and connection.type != "adbc_db2"
-                and ":" not in connection.server
-                and "\\" not in connection.server
-            ):
-                issues.append(
-                    f"- Server '{connection.server}' may need port (e.g., localhost:5432) or instance name"
-                )
-
-            if issues:
-                response = [
-                    f"# Connection Validation - {request.side.upper()}",
-                    "",
-                    "**Issues Found:**",
-                    "",
-                    *issues,
-                    "",
-                    "Note: This is a parameter check only. Actual connectivity is tested during export execution.",
-                ]
-            else:
-                auth_method = "Trusted"
-                if backup:
-                    auth_method = (
-                        "Private key file (encrypted backup)" if connection.user
-                        else "None (backup files)"
-                    )
-                elif connection.connect_string:
-                    auth_method = "Connection String"
-                elif connection.dsn:
-                    auth_method = "DSN"
-                elif connection.trusted_auth:
-                    auth_method = "Trusted"
-                else:
-                    auth_method = "Username/Password"
-
-                response = [
-                    f"# Connection Validation - {request.side.upper()}",
-                    "",
-                    "**All required parameters present**",
-                    "",
-                    f"- Connection Type: {connection.type}",
-                    f"- Server: {connection.server or '(not specified)'}",
-                    f"- Database: {connection.database}",
-                    f"- Authentication: {auth_method}",
-                    "",
-                    "Note: This validates parameters only. Actual connectivity will be tested during export.",
-                ]
-
-            return [TextContent(type="text", text="\n".join(response))]
-
-        except ValidationError as e:
-            error_msg = ["# Validation Error", ""]
-            for error in e.errors():
-                field = " -> ".join(str(x) for x in error["loc"])
-                error_msg.append(f"- **{field}**: {error['msg']}")
-            tips = _suggest_next_steps(e.errors())
-            if tips:
-                error_msg.append("")
-                error_msg.extend(tips)
-            return [TextContent(type="text", text="\n".join(error_msg))]
 
     async def handle_list_formats(arguments: Dict[str, Any]) -> list[TextContent]:
         """Handle fastbcp_list_formats tool."""
