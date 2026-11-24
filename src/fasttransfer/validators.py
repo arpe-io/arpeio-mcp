@@ -596,9 +596,18 @@ class TransferRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_target_requires_table(self):
-        """Ensure target has table specified."""
+        """Ensure target has schema and table specified.
+
+        FastTransfer stops with 'Target Table is mandatory' / 'Target Schema is
+        mandatory' before connecting when --targettable / --targetschema is missing.
+        """
         if not self.target.table:
             raise ValueError("Target must specify 'table'")
+        if not self.target.schema:
+            raise ValueError(
+                "Target must specify 'schema': FastTransfer requires --targetschema "
+                "(for example 'dbo' on SQL Server, 'public' on PostgreSQL, 'main' on DuckDB)"
+            )
         return self
 
     @model_validator(mode="after")

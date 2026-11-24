@@ -24,6 +24,7 @@
 - **FastTransfer `file_input` description**: `--fileinput` is a file holding the SQL query to run on the source, not a data file to import. Files are imported through a `duckdbstream` source and a query.
 - **Execute tools (FastTransfer, FastBCP, LakeXpress, MigratorXpress) ran another command than the one previewed** (#4): the preview joined the argv with spaces and the execute tool split it again with POSIX rules, so backslashes were dropped (`D:\MSSQL\BACKUPS` became `D:MSSQLBACKUPS`, `host\SS2025` became `hostSS2025`) and a query was cut at each space. The preview now quotes `command_string` with `shlex.join`, and the execute tools take the `command` list as well as the string.
 - **FastTransfer `log_level`** (#5): `fatal`, which FastTransfer refuses, is replaced by `verbose`, which it accepts (`error`, `warning`, `information`, `debug`, `verbose`).
+- **FastTransfer target `schema` is required** (#6): it was described as optional ("Omit to use the database default schema"), but FastTransfer stops with `Target Schema is mandatory` without `--targetschema`. The preview now refuses a target without `schema`, and the tool schema lists it as required.
 
 ## [0.3.14] - 2026-11-19
 

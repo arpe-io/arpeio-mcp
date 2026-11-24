@@ -417,6 +417,7 @@ class TestTransferRequest:
                     "type": "msbulk",
                     "server": "localhost",
                     "database": "targetdb",
+                    "schema": "dbo",
                     "table": "users",
                     "user": "user",
                     "password": "pass",
@@ -445,6 +446,7 @@ class TestTransferRequest:
                     "type": "msbulk",
                     "server": "localhost",
                     "database": "targetdb",
+                    "schema": "dbo",
                     "table": "users",
                     "user": "user",
                     "password": "pass",
@@ -467,6 +469,7 @@ class TestTransferRequest:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -490,12 +493,24 @@ class TestTransferRequest:
                     "type": "msbulk",
                     "server": "localhost",
                     "database": "targetdb",
+                    "schema": "dbo",
                     "user": "user",
                     "password": "pass",
                 },
             )
         errors = exc_info.value.errors()
         assert any("table" in str(e) for e in errors)
+
+    def test_target_requires_schema(self):
+        """FastTransfer stops with 'Target Schema is mandatory' without --targetschema (#6)."""
+        with pytest.raises(ValidationError) as exc_info:
+            TransferRequest(
+                source={"type": "pgsql", "server": "localhost:5432", "database": "sourcedb",
+                        "table": "users", "user": "user", "password": "pass"},
+                target={"type": "msbulk", "server": "localhost", "database": "targetdb",
+                        "table": "users", "user": "user", "password": "pass"},
+            )
+        assert "Target must specify 'schema'" in str(exc_info.value)
 
     def test_ctid_only_with_postgresql(self):
         """Test that Ctid method only works with PostgreSQL sources."""
@@ -513,6 +528,7 @@ class TestTransferRequest:
                     "type": "msbulk",
                     "server": "localhost",
                     "database": "targetdb",
+                    "schema": "dbo",
                     "table": "users",
                     "user": "user",
                     "password": "pass",
@@ -538,6 +554,7 @@ class TestTransferRequest:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -562,6 +579,7 @@ class TestTransferRequest:
                     "type": "msbulk",
                     "server": "localhost",
                     "database": "targetdb",
+                    "schema": "dbo",
                     "table": "users",
                     "user": "user",
                     "password": "pass",
@@ -587,6 +605,7 @@ class TestTransferRequest:
                 "type": "orabulk",
                 "server": "localhost:1521",
                 "database": "ORCL2",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -611,6 +630,7 @@ class TestTransferRequest:
                     "type": "nzbulk",
                     "server": "localhost",
                     "database": "nzdb2",
+                    "schema": "dbo",
                     "table": "data",
                     "user": "user",
                     "password": "pass",
@@ -636,6 +656,7 @@ class TestTransferRequest:
                     "type": "msbulk",
                     "server": "localhost",
                     "database": "targetdb",
+                    "schema": "dbo",
                     "table": "users",
                     "user": "user",
                     "password": "pass",
@@ -661,6 +682,7 @@ class TestTransferRequest:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",
@@ -685,6 +707,7 @@ class TestTransferRequest:
                 "type": "msbulk",
                 "server": "localhost",
                 "database": "targetdb",
+                "schema": "dbo",
                 "table": "users",
                 "user": "user",
                 "password": "pass",

@@ -201,7 +201,7 @@ def create_tools(
                                 "type": "string",
                                 "description": "Target database or service name.",
                             },
-                            "schema": {"type": "string", "description": "Target schema name. Omit to use the database default schema. It must exist, also with load_mode Create. With an adbc_* target it is used exactly as typed (quoted identifier): write it in its stored case."},
+                            "schema": {"type": "string", "description": "Target schema name. Required: FastTransfer stops with 'Target Schema is mandatory' without it (for example 'dbo' on SQL Server, 'public' on PostgreSQL, 'main' on DuckDB). It must exist, also with load_mode Create. With an adbc_* target it is used exactly as typed (quoted identifier): write it in its stored case."},
                             "table": {
                                 "type": "string",
                                 "description": "Target table name. The table must already exist in the target database, unless load_mode is Create (FastTransfer 1.1+), which creates it from the source. With an adbc_* target it is used exactly as typed (quoted identifier): write it in its stored case ('ORDERS' on Oracle, Db2 and Teradata; 'orders' on PostgreSQL).",
@@ -218,7 +218,7 @@ def create_tools(
                                 "description": "Full native connection string. Use instead of server/user/password for custom formats. adbc_* types take the driver's own vocabulary ('uri=sqlserver://user:password@host:1433/?database=db', with driver options after ';'), not ADO.NET keywords.",
                             },
                         },
-                        "required": ["type", "database", "table"],
+                        "required": ["type", "database", "schema", "table"],
                     },
                     "os_type": {
                         "type": "string",
