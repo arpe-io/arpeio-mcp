@@ -3,7 +3,7 @@ Version mappings and URL templates for arpe.io documentation sites.
 """
 
 FASTBCP_DOC_VERSIONS = ["0.28", "0.29", "0.30", "0.31", "0.32", "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7"]
-FASTTRANSFER_DOC_VERSIONS = ["0.14", "0.15", "0.16", "0.17", "0.18", "1.0"]
+FASTTRANSFER_DOC_VERSIONS = ["0.14", "0.15", "0.16", "0.17", "0.18", "1.0", "1.1"]
 # The LakeXpress site publishes 0.3 (at /0.3/) and 0.6 (at /latest/) only; a
 # binary of another series falls back to the latest one.
 LAKEXPRESS_DOC_VERSIONS = ["0.3", "0.6"]
@@ -45,6 +45,9 @@ DOC_URLS = {
 # 404; FastTransfer 0.18 moved to /0.18/ when 1.0 was published), and so are
 # MigratorXpress 0.7 and 0.8 (/0.7/ and /0.8/ return 404) and LakeXpress 0.6;
 # move these aliases forward when a newer version becomes "latest".
+# FastTransfer 1.1 is published at /1.1/ while the site keeps 1.0 as its
+# "latest" version: when 1.1 becomes "latest", alias "1.1" instead of "1.0"
+# (1.0 then gets a path of its own).
 DOC_URL_VERSION_ALIASES = {
     "fastbcp": {"1.7": "latest"},
     "fasttransfer": {"1.0": "latest"},

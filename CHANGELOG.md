@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.15] - 2026-11-24
+
+### Added
+
+- **FastTransfer 1.1.0 support**: new registry entry `1.1.0.0`, now the latest known version. The README says "up to 1.1.0".
+  - New load modes `Create` and `Replace` (`--loadmode`). `Create` creates the target table from the source when it does not exist, then loads it; when the table exists it is truncated and loaded. `Replace` is an alias of `Create`. The preview explanation says that an existing table is truncated.
+  - New `infer_data_type` option (`--inferdatatype`): `fast`, `allvarchar` or `best`, how `Create` derives the column types. The description names the three environment variables `FASTTRANSFER_INFER_DEFAULT_STRING_MAXSIZE`, `FASTTRANSFER_INFER_STRING_MARGIN` and `FASTTRANSFER_INFER_SAMPLE_PERCENT`.
+  - New `backup_mssql` (SQL Server `.bak` files) and `backup_rman` (Oracle RMAN backup sets) source types, read without restoring them. The target must be an `adbc_*` type; `server` is the directory of the backup files and `database` their names or patterns separated by `;`; no login is asked, and `user` / `password` are the private key file of the certificate and its password for an encrypted `backup_mssql` backup. Only the methods `None` and `Physical` (resolved to Pages) are accepted, and a `query` is limited to `SELECT * | col [, col...] FROM [schema.]table` (`TOP n` for `backup_mssql`). A backup type as a target is refused. Parallelism suggestions give `Physical` for them.
+  - SQL Server `server` (`mssql`, `msbulk`, `msoledbsql`, `adbc_mssql`, and `oledb` with a SQL Server provider): the `tcp:` prefix and `host\INSTANCE:port` are refused with the form to use, as FastTransfer 1.1 does before any connection.
+  - Version-compatibility warnings: a backup source, `Create` or `infer_data_type` against a binary older than 1.1; `Replace` against a binary older than 1.1, where it behaves like `Append`; `host:port` as the SQL Server `server` of a native type (`mssql`, `msbulk`, `msoledbsql`, `oledb` with a SQL Server provider) against a binary older than 1.1, which takes it for a host name. On 1.1+: `infer_data_type` with another load mode than `Create` (ignored by FastTransfer), `allvarchar` with a generic `odbc` or `oledb` source, and `allvarchar` or `best` with a query read by a physical method.
+  - `fasttransfer_info`: `action="combinations"` lists the backup sources and the `Create` load mode; `action="workflow"` gains a "Load mode" section, a "Backup source" section for the two backup types (files to give, encrypted backups, restricted query, version read, index, the `FASTTRANSFER_BACKUP_RESTORE_MODE`, `FASTTRANSFER_BACKUP_RESTORE_POINT` and `FASTTRANSFER_INDEX_DIR` environment variables) and the `FASTTRANSFER_ADBC_SSLMODE` environment variable for `adbc_pgsql` and `adbc_netezza`; `action="version"` capabilities gain `supports_create_load_mode` and `supports_mssql_host_colon_port`.
+  - The server instructions gain a "FastTransfer 1.1 notes" section, with the driver versions bundled in 1.1.0 (ArpeMSSQL 0.8.4, ArpePGSQL 0.5.6, ArpeOracle 0.4.8, ArpeNetezza 0.3.12, ArpeDb2 0.4.3, ArpeTeradata 0.3.8, ArpeMSBackup 0.4.1, ArpeOraBackup 0.3.1), and the parallelism table says that `Physical` resolves to Pages for the backup types in FastTransfer 1.1+ too.
+  - FastTransfer 1.1 docs added to doc search, crawled from `/1.1/`. The site still serves 1.0 at `/latest/`. A search with a 1.1 binary (or no binary) crawls the 1.1 pages.
+
+### Changed
+
+- **FastTransfer workflow tips**: the `pgcopy` target tip says that the lost fractional seconds and the `bytea` values written as `System.Byte[]` are fixed in 1.1 (the `timestamptz` shift is not); the `adbc_db2` target tip says that from 1.1 each stream of a parallel load commits every 50,000 rows; the ADBC tips say that the target table must exist unless `load_mode` is `Create`.
+- The FastTransfer `server` descriptions give the SQL Server forms (`host`, `host:port`, `host,port`, `host\INSTANCE`, `host\INSTANCE,port`).
+
+### Fixed
+
+- **FastTransfer `file_input` description**: `--fileinput` is a file holding the SQL query to run on the source, not a data file to import. Files are imported through a `duckdbstream` source and a query.
+
 ## [0.3.14] - 2026-11-19
 
 ### Added

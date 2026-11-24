@@ -103,9 +103,9 @@ def _errors(exc_info):
 
 
 class TestRegistry:
-    def test_100_is_latest(self):
-        latest = max(VERSION_REGISTRY, key=lambda v: tuple(int(x) for x in v.split(".")))
-        assert latest == "1.0.0.0"
+    def test_100_is_registered(self):
+        """1.0.0.0 was the latest known version until 1.1.0.0 (see test_v110)."""
+        assert "1.0.0.0" in VERSION_REGISTRY
 
     def test_100_adds_adbc_types_on_both_sides(self):
         caps = VERSION_REGISTRY["1.0.0.0"]
@@ -124,10 +124,14 @@ class TestRegistry:
     def test_100_requires_license(self):
         assert VERSION_REGISTRY["1.0.0.0"].requires_license is True
 
-    def test_enums_match_latest_registry(self):
-        """The schema enums are exactly what the 1.0.0 CLI accepts."""
+    def test_enums_cover_the_100_registry(self):
+        """The schema enums hold what the 1.0.0 CLI accepts (1.1 adds the backup sources, see test_v110)."""
         caps = VERSION_REGISTRY["1.0.0.0"]
-        assert {t.value for t in SourceConnectionType} == set(caps.source_types)
+        assert {t.value for t in SourceConnectionType} - set(caps.source_types) == {
+            "backup_mssql",
+            "backup_rman",
+        }
+        assert set(caps.source_types) <= {t.value for t in SourceConnectionType}
         assert {t.value for t in TargetConnectionType} == set(caps.target_types)
         assert {m.value for m in ParallelismMethod} == set(caps.parallelism_methods)
 
@@ -260,7 +264,9 @@ class TestAdbcTypes:
 
 class TestPhysical:
     def test_strategies(self):
-        assert PHYSICAL_STRATEGIES == {
+        # 1.1 adds Pages for the backup sources (see test_v110)
+        engines = {k: v for k, v in PHYSICAL_STRATEGIES.items() if v != "Pages"}
+        assert engines == {
             "pgsql": "Ctid",
             "pgcopy": "Ctid",
             "oraodp": "Rowid",
@@ -880,8 +886,8 @@ class TestInfoTool:
 
 
 class TestDocVersions:
-    def test_10_is_the_latest_doc_version(self):
-        assert FASTTRANSFER_DOC_VERSIONS[-1] == "1.0"
+    def test_10_is_a_doc_version(self):
+        assert "1.0" in FASTTRANSFER_DOC_VERSIONS
         assert "0.18" in FASTTRANSFER_DOC_VERSIONS
 
     def test_10_served_at_latest_and_018_at_its_own_path(self):
@@ -896,7 +902,7 @@ class TestDocVersions:
 
     @pytest.mark.parametrize(
         "detected,expected",
-        [("1.0.0.0", "1.0"), ("0.18.2.0", "0.18"), ("0.17.1.0", "0.17"), (None, "1.0")],
+        [("1.0.0.0", "1.0"), ("0.18.2.0", "0.18"), ("0.17.1.0", "0.17"), (None, "1.1")],
     )
     def test_detected_version_maps_to_doc_version(self, detected, expected):
         assert best_version_for("fasttransfer", detected, FASTTRANSFER_DOC_VERSIONS) == expected

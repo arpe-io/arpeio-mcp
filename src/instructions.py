@@ -20,7 +20,7 @@ Choose the right tool based on what the user wants to accomplish:
 | Goal | Tool | Notes |
 |------|------|-------|
 | Export DB table/query to files (CSV, Parquet, JSON, etc.) | **FastBCP** | Outputs to local disk or cloud storage (S3, Azure, GCS, OneLake) |
-| Transfer data from one database to another | **FastTransfer** | Direct DB-to-DB, no intermediate files |
+| Transfer data from one database to another | **FastTransfer** | Direct DB-to-DB, no intermediate files; 1.1+ can create the target table and read SQL Server / Oracle RMAN backup files |
 | Pipeline from DB to a cloud lakehouse as Parquet | **LakeXpress** | Targets: Snowflake, Databricks, Fabric, BigQuery, Redshift, MotherDuck, Glue, DuckLake |
 | Migrate schema + data across database platforms | **MigratorXpress** | Handles DDL translation, PK/FK/AK copy, and parallel data transfer |
 | Read / bulk-load a database as Apache Arrow from code | **Arpe ADBC drivers** | Libraries, not CLIs: call `adbc_info`; no preview/execute step |
@@ -48,7 +48,7 @@ source database and available key columns:
 | **NZDataSlice** | Netezza only; uses native data slicing | No |
 | **Timepartition** | FastBCP 0.30+, FastTransfer 0.18+; partitions by time column (FastTransfer key: tuple such as `(date_col,year,month)`) | Yes (datetime) |
 | **DBPartition** | FastBCP 1.3+, FastTransfer 0.18+; one chunk per native table partition (SQL Server, PostgreSQL, Oracle, MySQL, Teradata; FastBCP 1.7+ and FastTransfer 1.0+ also Db2 for LUW through `adbc_db2`); needs schema + table | No |
-| **Physical** | FastBCP 1.4+, FastTransfer 1.0+; physical row location, resolved to PhysLoc / Ctid / Rowid / NZDataSlice from the connection type (SQL Server, PostgreSQL, Oracle, Netezza only), and in FastBCP to Pages for the backup types `backup_mssql` / `backup_rman`; needs schema + table (not on Netezza in FastTransfer, where a query can also be added to filter the table) | No |
+| **Physical** | FastBCP 1.4+, FastTransfer 1.0+; physical row location, resolved to PhysLoc / Ctid / Rowid / NZDataSlice from the connection type (SQL Server, PostgreSQL, Oracle, Netezza only), and to Pages for the backup types `backup_mssql` / `backup_rman` (FastBCP 1.5+ / 1.6+, FastTransfer 1.1+); needs schema + table (not on Netezza in FastTransfer, where a query can also be added to filter the table) | No |
 
 Default recommendations:
 - Numeric primary key exists → **Ntile**
@@ -240,7 +240,8 @@ Otherwise keep the native types, and when both ends are ADBC engines and the \
 native pair has a limitation, mention it and the `adbc_*` alternative, which \
 needs the ADBC driver block in the license.
 - **ADBC rules**: the license file must also hold the ARPE ADBC DRIVER block \
-(exit code 99 without it); the target table must exist, and the target schema \
+(exit code 99 without it); the target table must exist (unless `load_mode` \
+is `Create`, 1.1+), and the target schema \
 and table are matched in their exact stored case (`ORDERS` on Oracle, Db2 and \
 Teradata; `orders` on PostgreSQL); `use_work_tables` is refused and \
 `batch_size` has no effect; trusted authentication is not available on \
@@ -259,13 +260,80 @@ there. From 1.0 a failed merge fails the run.
 fixed in 1.0. `RangeId` and `Random` never transfer the rows whose key is NULL.
 - **Known limitations in 1.0**: a native `pgcopy` target fed from a source \
 that is not `pgcopy` writes some values wrong without an error (fractional \
-seconds of `time` / `timestamp`, `timestamptz` shifted, `bytea` as text): use \
+seconds of `time` / `timestamp`, `timestamptz` shifted, `bytea` as text; the \
+fractional seconds and `bytea` are fixed in 1.1, not the time zone shift): use \
 `pgcopy` to `pgcopy` or `adbc_*` on both ends for such columns. A native \
 PostgreSQL source into `orabulk` fails on a `date` column: use `adbc_pgsql` \
 to `adbc_oracle`. An Oracle `--query` with `FROM t PARTITION (P1)` now fails \
 at parse time: filter on the partition key instead.
 - **Exit codes**: 99 = no or invalid license (or no ADBC driver block for an \
 `adbc_*` run), 100 = license expired.
+
+## FastTransfer 1.1 notes
+
+- **`load_mode` Create** (1.1+): creates the target table from the source \
+(table, query or files) when it does not exist, then loads it; when it exists \
+under the name exactly as typed it is truncated and loaded, its structure \
+kept; a table that exists only in another case is an error. The created table \
+has the source's column names and order, every column nullable, no key, index \
+or constraint; the target schema must exist. `Replace` is an alias of `Create` \
+(before 1.1 it behaved like `Append`). Use `Truncate` or `Append` when the \
+table is known to exist, `Create` when it may not. Not tested yet with \
+ClickHouse, Netezza or SAP HANA, with Teradata as a target, or with a backup \
+source.
+- **`infer_data_type`** (`--inferdatatype`, only with `Create`; ignored with a \
+warning otherwise): `fast` (default) uses the source metadata, no row is read, \
+and a text column with no declared length gets 256 characters; `allvarchar` \
+creates every column as text (not from a generic `odbc` / `oledb` source); \
+`best` profiles Oracle sources and files read through DuckDB to find the \
+strictest type holding every value (the `fast` types for the other sources), \
+and a row that does not fit later fails the load. Between two ends of the \
+same engine the source types are copied unchanged, except with `allvarchar`. \
+`allvarchar` and `best` rewrite the source query: with `Physical`, give schema \
+and table rather than a query. Environment variables, set before the run: \
+`FASTTRANSFER_INFER_DEFAULT_STRING_MAXSIZE` (default 256, or `max`), \
+`FASTTRANSFER_INFER_STRING_MARGIN` (characters, or a factor `2x` to `10x`, for \
+`best`), `FASTTRANSFER_INFER_SAMPLE_PERCENT` (above 0 up to 100, for `best`).
+- **Backup sources** (1.1+): `backup_mssql` (SQL Server `.bak`: full and \
+differential, compressed, striped, encrypted or TDE ones included) and \
+`backup_rman` (Oracle RMAN backup sets: full, level 0, incremental level 1 to \
+4) are read without restoring them and without a database. The target must be \
+an `adbc_*` type; Windows x64 and Linux x64 only. `server` is the directory of \
+the backup files and `database` their names or patterns separated by `;` \
+(`backup_mssql`: the full backup, its differentials and every stripe; \
+`backup_rman`: `*`, `?`, `**` and directories, e.g. `l0;l1/**`). No login: for \
+an encrypted `backup_mssql` backup, `user` is the certificate's private key \
+file and `password` its password. Source: `schema` + `table`, or a `query` \
+limited to `SELECT * | col [, col...] FROM [schema.]table` (`backup_mssql` \
+also `TOP n`), no WHERE, no join. Parallel methods **None** and **Physical** \
+(resolved to Pages) only. The latest version the files hold is read, and a \
+backup that cannot be used stops the run with the target untouched; \
+`FASTTRANSFER_BACKUP_RESTORE_MODE=best_effort` reads the newest usable \
+version, `FASTTRANSFER_BACKUP_RESTORE_POINT=full` the last full (or level 0) \
+backup only. The first read indexes each backup (minutes on a large \
+compressed one); `FASTTRANSFER_INDEX_DIR` sets the index directory. Driver \
+options (`adbc.arpemsbackup.*`, `adbc.arpeorabackup.*`) go in a \
+`connect_string`, given instead of `server` / `user` / `password`. Unlike \
+FastBCP, the output is a database table, not Parquet files.
+- **Bundled drivers in 1.1.0**: ArpeMSSQL 0.8.4, ArpePGSQL 0.5.6, ArpeOracle \
+0.4.8, ArpeNetezza 0.3.12, ArpeDb2 0.4.3, ArpeTeradata 0.3.8, ArpeMSBackup \
+0.4.1, ArpeOraBackup 0.3.1.
+- **TLS on `adbc_pgsql` / `adbc_netezza`** (1.1+): both negotiate TLS by \
+default, which fails against a server without TLS. The \
+`FASTTRANSFER_ADBC_SSLMODE` environment variable (`disable`, `prefer`, \
+`require`, `verify-ca`, `verify-full`) sets the driver's `sslmode` on both \
+ends; an `sslmode` already in a `connect_string` wins; any other value stops \
+the run. It does not apply to `adbc_mssql` or `adbc_oracle`.
+- **SQL Server `server`** (`mssql`, `msbulk`, `msoledbsql`, `oledb` with a SQL \
+Server provider, `adbc_mssql`): `host`, `host:port`, `host,port`, \
+`host\\INSTANCE` or `host\\INSTANCE,port`. From 1.1 `host:port` works with the \
+native types too (before, write `host,port`), and the `tcp:` prefix and \
+`host\\INSTANCE:port` are refused before any connection.
+- **Fixed in 1.1**: `Ntile` on an Oracle or MySQL source (it failed with a \
+query and split the rows wrongly with a table: use another method before \
+1.1); a query with `QUALIFY`, a named `WINDOW` or `CONNECT BY` lost that \
+clause under a parallel method; an `adbc_db2` target now commits every 50,000 \
+rows on each stream of a parallel load.
 
 ## Parallelism in LakeXpress
 

@@ -229,7 +229,7 @@ Read-only advisory tools were consolidated into one `*_info` tool per product (w
 
 ### FastTransfer (3 tools)
 - `fasttransfer_info` — Read-only advisory: `action="combinations" | "parallelism" | "workflow" | "version"`
-- `fasttransfer_preview_transfer` — Validate parameters and render the command (auto-suggests parallelism). Supports FastTransfer up to 1.0.0: the `adbc_*` connection types (SQL Server, PostgreSQL, Oracle, Netezza, Db2 for LUW, Teradata; ADBC on both ends) and the `Physical` parallel method
+- `fasttransfer_preview_transfer` — Validate parameters and render the command (auto-suggests parallelism). Supports FastTransfer up to 1.1.0: the `adbc_*` connection types (SQL Server, PostgreSQL, Oracle, Netezza, Db2 for LUW, Teradata; ADBC on both ends), the `Physical` parallel method, the `Create` load mode with `infer_data_type`, and the `backup_mssql` / `backup_rman` sources (SQL Server and Oracle RMAN backup files, to an `adbc_*` target)
 - `fasttransfer_execute_transfer` — Run the transfer
 
 ### LakeXpress (3 tools)

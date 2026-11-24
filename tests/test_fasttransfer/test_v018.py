@@ -316,7 +316,7 @@ class TestDocVersions:
 
     @pytest.mark.parametrize(
         "detected,expected",
-        [("0.18.2.0", "0.18"), ("0.18.1.0", "0.18"), ("0.18.0.0", "0.18"), ("0.17.1.0", "0.17"), (None, "1.0")],
+        [("0.18.2.0", "0.18"), ("0.18.1.0", "0.18"), ("0.18.0.0", "0.18"), ("0.17.1.0", "0.17"), (None, "1.1")],
     )
     def test_detected_version_maps_to_doc_version(self, detected, expected):
         assert best_version_for("fasttransfer", detected, FASTTRANSFER_DOC_VERSIONS) == expected
