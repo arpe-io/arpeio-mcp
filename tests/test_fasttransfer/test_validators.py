@@ -279,10 +279,17 @@ class TestTransferOptions:
         options = TransferOptions(degree=-4)
         assert options.degree == -4
 
-    def test_invalid_degree_too_large(self):
-        """Test that degree >= 1024 is invalid."""
-        with pytest.raises(ValidationError):
-            TransferOptions(degree=1024)
+    @pytest.mark.parametrize("degree", [-32, -1, 1, 1024])
+    def test_degree_bounds_of_the_fasttransfer_parser_are_valid(self, degree):
+        """FastTransfer accepts --degree from -32 to 1024 (#7)."""
+        assert TransferOptions(degree=degree).degree == degree
+
+    @pytest.mark.parametrize("degree", [-33, -100, 1025])
+    def test_degree_outside_the_parser_bounds_is_invalid(self, degree):
+        """FastTransfer refuses --degree below -32 or above 1024 (#7)."""
+        with pytest.raises(ValidationError) as exc_info:
+            TransferOptions(degree=degree)
+        assert "between -32 and 1024" in str(exc_info.value)
 
     def test_data_driven_requires_distribute_key(self):
         """Test that DataDriven method requires distribute_key_column."""

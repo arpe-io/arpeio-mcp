@@ -11,6 +11,10 @@ from typing import Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+# Bounds of --degree in the FastTransfer parser (BoundedValueArgument, inclusive).
+DEGREE_MIN = -32
+DEGREE_MAX = 1024
+
 class SourceConnectionType(str, Enum):
     """Source database connection types supported by FastTransfer."""
 
@@ -452,11 +456,12 @@ class TransferOptions(BaseModel):
     @field_validator("degree")
     @classmethod
     def validate_degree(cls, v):
-        """Validate parallelism degree."""
-        if v == 0 or (v > 0 and v < 1024) or v < 0:
+        """Validate parallelism degree: the FastTransfer parser bounds --degree to -32..1024."""
+        if DEGREE_MIN <= v <= DEGREE_MAX:
             return v
         raise ValueError(
-            "Degree must be 0 (auto), 0 < n < 1024 (fixed), or < 0 (CPU adaptive)"
+            f"Degree must be between {DEGREE_MIN} and {DEGREE_MAX}: 0 (all cores), "
+            f"1 to {DEGREE_MAX} (fixed), or {DEGREE_MIN} to -1 (cores divided by the absolute value)"
         )
 
     @model_validator(mode="after")

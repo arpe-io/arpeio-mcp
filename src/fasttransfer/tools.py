@@ -18,6 +18,8 @@ from .validators import (
     ADBC_TYPES,
     BACKUP_TYPES,
     CREATE_LOAD_MODES,
+    DEGREE_MAX,
+    DEGREE_MIN,
     PHYSICAL_METHODS,
     PHYSICAL_STRATEGIES,
     TransferRequest,
@@ -241,7 +243,9 @@ def create_tools(
                             },
                             "degree": {
                                 "type": "integer",
-                                "description": "Parallelism degree. 0 = use all CPU cores. Positive integer = exact thread count. Negative integer = cores / abs(value), e.g. -2 on 16 cores = 8 threads.",
+                                "description": "Parallelism degree, from -32 to 1024. 0 = use all CPU cores. Positive integer = exact thread count. Negative integer = cores / abs(value), e.g. -2 on 16 cores = 8 threads.",
+                                "minimum": DEGREE_MIN,
+                                "maximum": DEGREE_MAX,
                                 "default": -2,
                             },
                             "load_mode": {
