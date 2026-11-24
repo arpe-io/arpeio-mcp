@@ -17,6 +17,8 @@ from .command_builder import CommandBuilder, FastTransferError
 from .command_builder import get_supported_combinations, suggest_parallelism_method
 from .validators import (
     ADBC_TYPES,
+    BACKUP_TYPES,
+    CREATE_LOAD_MODES,
     PHYSICAL_METHODS,
     PHYSICAL_STRATEGIES,
     TransferRequest,
@@ -26,6 +28,7 @@ from .validators import (
     TargetConnectionType,
     ParallelismMethod,
     LoadMode,
+    InferDataType,
     MapMethod,
     LogLevel,
     native_source_type,
@@ -134,15 +137,15 @@ def create_tools(
                             "type": {
                                 "type": "string",
                                 "enum": [e.value for e in SourceConnectionType],
-                                "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL). The ADBC types 'adbc_mssql', 'adbc_pgsql', 'adbc_oracle', 'adbc_netezza', 'adbc_db2' (IBM Db2 for LUW, no IBM client needed) and 'adbc_teradata' (FastTransfer 1.0+) read through the bundled Arpe ADBC drivers; they work only with an adbc_* target (ADBC on both ends) and on Windows x64 / Linux x64.",
+                                "description": "Source database connection type (e.g., 'pgsql' for PostgreSQL, 'mssql' for SQL Server, 'oraodp' for Oracle, 'mysql' for MySQL). The ADBC types 'adbc_mssql', 'adbc_pgsql', 'adbc_oracle', 'adbc_netezza', 'adbc_db2' (IBM Db2 for LUW, no IBM client needed) and 'adbc_teradata' (FastTransfer 1.0+) read through the bundled Arpe ADBC drivers; they work only with an adbc_* target (ADBC on both ends) and on Windows x64 / Linux x64. The backup types 'backup_mssql' (SQL Server .bak files: full and differential, compressed, striped, encrypted or TDE ones included) and 'backup_rman' (Oracle RMAN backup sets: full, level 0 and incremental level 1 to 4) (FastTransfer 1.1+) read the backup files without restoring them and without a database; they need an adbc_* target, take only the methods None and Physical, and run on Windows x64 / Linux x64.",
                             },
                             "server": {
                                 "type": "string",
-                                "description": "Server address (e.g., 'localhost:5432', 'myserver\\\\SQLEXPRESS', 'dbhost:1521'). adbc_* types: 'host', 'host:port' or 'host,port' (default ports: 1433, 5432, 1521, 5480 Netezza, 50000 Db2, 1025 Teradata); adbc_oracle: 'host[:port]/service' or a TNS alias.",
+                                "description": "Server address (e.g., 'localhost:5432', 'myserver\\\\SQLEXPRESS', 'dbhost:1521'). adbc_* types: 'host', 'host:port' or 'host,port' (default ports: 1433, 5432, 1521, 5480 Netezza, 50000 Db2, 1025 Teradata); adbc_oracle: 'host[:port]/service' or a TNS alias. SQL Server (mssql, msoledbsql, oledb with a SQL Server provider, adbc_mssql): 'host', 'host:port' (native types: FastTransfer 1.1+, write 'host,port' before), 'host,port', 'host\\INSTANCE' or 'host\\INSTANCE,port'; the 'tcp:' prefix and 'host\\INSTANCE:port' are refused. backup_mssql / backup_rman: the directory of the backup files (e.g. 'D:\\MSSQLBACKUP' or '/backup/rman').",
                             },
                             "database": {
                                 "type": "string",
-                                "description": "Source database or service name to connect to.",
+                                "description": "Source database or service name to connect to. backup_mssql / backup_rman: the backup file names or patterns in the 'server' directory, separated by ';'. backup_mssql: the full backup, its differentials and every stripe, e.g. 'mydb_full.bak;mydb_diff_*.bak'. backup_rman: '*' and '?' in a name, '**' for any number of directories, a directory standing for its files, e.g. 'l0;l1/**'; an entry that matches nothing stops the run.",
                             },
                             "schema": {
                                 "type": "string",
@@ -150,18 +153,18 @@ def create_tools(
                             },
                             "table": {
                                 "type": "string",
-                                "description": "Source table name. Provide this OR query OR file_input, not multiple. Exception: with the Physical method (and the deprecated Ctid, Rowid, Physloc), schema and table are required and a query can be added to filter that table.",
+                                "description": "Source table name. Provide this OR query OR file_input, not multiple. Exception: with the Physical method (and the deprecated Ctid, Rowid, Physloc), schema and table are required and a query can be added to filter that table. backup_mssql / backup_rman: the table to read from the backup (with schema), or a restricted query instead.",
                             },
                             "query": {
                                 "type": "string",
-                                "description": "Custom SQL SELECT query to use as source data instead of a full table. Use when you need filtering, joins, or column selection. With the Physical method it is given next to schema and table, and filters that table.",
+                                "description": "Custom SQL SELECT query to use as source data instead of a full table. Use when you need filtering, joins, or column selection. With the Physical method it is given next to schema and table, and filters that table. backup_mssql / backup_rman: only 'SELECT * | col [, col...] FROM [schema.]table' (backup_mssql also takes 'TOP n'); no WHERE, no join, no other SQL.",
                             },
                             "file_input": {
                                 "type": "string",
-                                "description": "Absolute path to a data file to use as source input instead of a database table or query.",
+                                "description": "Absolute path to a file holding the SQL query to run on the source (--fileinput), instead of a table or an inline query. Files to import (CSV, Parquet, JSON) are not given here: they are read by a 'duckdbstream' source through a query such as SELECT * FROM read_parquet('...').",
                             },
-                            "user": {"type": "string", "description": "Database username. Required unless using trusted_auth, connect_string, or dsn."},
-                            "password": {"type": "string", "description": "Database password. Required when user is provided and not using trusted_auth."},
+                            "user": {"type": "string", "description": "Database username. Required unless using trusted_auth, connect_string, or dsn. Backup types need no login: for an encrypted backup_mssql backup (WITH ENCRYPTION or TDE), 'user' is the private key file of the certificate ('.pvk', '.pfx', PEM...)."},
+                            "password": {"type": "string", "description": "Database password. Required when user is provided and not using trusted_auth. backup_mssql, encrypted backup: the password of the private key file given in 'user'."},
                             "trusted_auth": {
                                 "type": "boolean",
                                 "description": "Use trusted (integrated) authentication instead of username/password: Windows authentication for SQL Server. With the adbc_* types: Windows SSPI or Kerberos for adbc_mssql and adbc_pgsql, Kerberos for adbc_oracle, adbc_db2 and adbc_teradata; refused by adbc_netezza.",
@@ -169,7 +172,7 @@ def create_tools(
                             },
                             "connect_string": {
                                 "type": "string",
-                                "description": "Full native connection string. Use instead of server/user/password for custom formats (e.g., Oracle TNS). adbc_* types take the driver's own vocabulary, not ADO.NET keywords: 'uri=postgresql://user:password@host:5432/db' (sqlserver://, oracle://, netezza://, db2://, teradata://), with driver options after ';'; percent-encode '@', ':' and '/' in the password. Prefer server/user/password for them.",
+                                "description": "Full native connection string. Use instead of server/user/password for custom formats (e.g., Oracle TNS). adbc_* types take the driver's own vocabulary, not ADO.NET keywords: 'uri=postgresql://user:password@host:5432/db' (sqlserver://, oracle://, netezza://, db2://, teradata://), with driver options after ';'; percent-encode '@', ':' and '/' in the password. Prefer server/user/password for them. backup_mssql / backup_rman: the driver options given directly ('adbc.arpemsbackup.*' / 'adbc.arpeorabackup.*'), instead of server/user/password; an option there wins over the FASTTRANSFER_INDEX_DIR and FASTTRANSFER_BACKUP_RESTORE_* environment variables.",
                             },
                             "dsn": {
                                 "type": "string",
@@ -188,20 +191,20 @@ def create_tools(
                             "type": {
                                 "type": "string",
                                 "enum": [e.value for e in TargetConnectionType],
-                                "description": "Target database connection type (e.g., 'msbulk' for SQL Server, 'pgcopy' or 'pgsql' for PostgreSQL, 'orabulk' for Oracle, 'mysqlbulk' for MySQL). The ADBC types 'adbc_mssql', 'adbc_pgsql', 'adbc_oracle', 'adbc_netezza', 'adbc_db2' and 'adbc_teradata' (FastTransfer 1.0+) load through the bundled Arpe ADBC drivers and work only with an adbc_* source. Use `fasttransfer_info` with action='combinations' to see valid pairs.",
+                                "description": "Target database connection type (e.g., 'msbulk' for SQL Server, 'pgcopy' or 'pgsql' for PostgreSQL, 'orabulk' for Oracle, 'mysqlbulk' for MySQL). The ADBC types 'adbc_mssql', 'adbc_pgsql', 'adbc_oracle', 'adbc_netezza', 'adbc_db2' and 'adbc_teradata' (FastTransfer 1.0+) load through the bundled Arpe ADBC drivers and work only with an adbc_* source or a backup source (backup_mssql, backup_rman; 1.1+). Use `fasttransfer_info` with action='combinations' to see valid pairs.",
                             },
                             "server": {
                                 "type": "string",
-                                "description": "Server address in host:port format (e.g., 'localhost:5432') or host\\instance for SQL Server.",
+                                "description": "Server address in host:port format (e.g., 'localhost:5432') or host\\instance for SQL Server. SQL Server (msbulk, adbc_mssql): 'host', 'host:port' (msbulk: FastTransfer 1.1+, write 'host,port' before), 'host,port', 'host\\INSTANCE' or 'host\\INSTANCE,port'; the 'tcp:' prefix and 'host\\INSTANCE:port' are refused.",
                             },
                             "database": {
                                 "type": "string",
                                 "description": "Target database or service name.",
                             },
-                            "schema": {"type": "string", "description": "Target schema name. Omit to use the database default schema. With an adbc_* target it is used exactly as typed (quoted identifier): write it in its stored case."},
+                            "schema": {"type": "string", "description": "Target schema name. Omit to use the database default schema. It must exist, also with load_mode Create. With an adbc_* target it is used exactly as typed (quoted identifier): write it in its stored case."},
                             "table": {
                                 "type": "string",
-                                "description": "Target table name. The table must already exist in the target database. With an adbc_* target it is used exactly as typed (quoted identifier): write it in its stored case ('ORDERS' on Oracle, Db2 and Teradata; 'orders' on PostgreSQL).",
+                                "description": "Target table name. The table must already exist in the target database, unless load_mode is Create (FastTransfer 1.1+), which creates it from the source. With an adbc_* target it is used exactly as typed (quoted identifier): write it in its stored case ('ORDERS' on Oracle, Db2 and Teradata; 'orders' on PostgreSQL).",
                             },
                             "user": {"type": "string", "description": "Database username. Required unless using trusted_auth or connect_string."},
                             "password": {"type": "string", "description": "Database password. Required when user is provided and not using trusted_auth."},
@@ -229,7 +232,7 @@ def create_tools(
                             "method": {
                                 "type": "string",
                                 "enum": [e.value for e in ParallelismMethod],
-                                "description": "Parallelism method. Ntile: even distribution on numeric key. DataDriven: distinct value partitions, works with any data type. Physical: split on the physical row location, no key needed; resolved from the source connection type to Ctid (PostgreSQL), Rowid (Oracle), Physloc (SQL Server; only on data that is not being written) or NZDataSlice (Netezza); needs schema and table (not on Netezza), and a query can be added to filter that table; not available on other sources (FastTransfer 1.0+). Ctid, Rowid, Physloc, NZDataSlice: the engine-specific names, deprecated since 1.0 (removed in 2.0), still needed on FastTransfer < 1.0 and for Physloc through an odbc source. RangeId: numeric min/max range. Random: modulo-based approximate distribution. DBPartition: one stream per native table partition, biggest first, for SQL Server (mssql, msoledbsql), PostgreSQL (pgsql, pgcopy), Oracle (oraodp), MySQL (mysql), Teradata (teradata, row partitioning only), their adbc_* counterparts and Db2 for LUW range partitioning (adbc_db2, 1.0+); needs schema and table (no query), no key; an unpartitioned table falls back to a single stream (FastTransfer 0.18+). Timepartition: one stream per year, month, day or ISO week of a date column, biggest first; distribute_key_column is a tuple such as '(order_date,year,month)'; works with a table or a query (FastTransfer 0.18+). None: single-threaded. Call `fasttransfer_info` with action='parallelism' if unsure.",
+                                "description": "Parallelism method. Ntile: even distribution on numeric key. DataDriven: distinct value partitions, works with any data type. Physical: split on the physical row location, no key needed; resolved from the source connection type to Ctid (PostgreSQL), Rowid (Oracle), Physloc (SQL Server; only on data that is not being written) or NZDataSlice (Netezza); needs schema and table (not on Netezza), and a query can be added to filter that table; not available on other sources (FastTransfer 1.0+). On a backup source (backup_mssql, backup_rman; 1.1+) Physical resolves to Pages: each stream reads one slice of the table (pages of a rowstore, rowgroups of a columnstore, ranges of Oracle blocks), and it is the only method besides None. Ctid, Rowid, Physloc, NZDataSlice: the engine-specific names, deprecated since 1.0 (removed in 2.0), still needed on FastTransfer < 1.0 and for Physloc through an odbc source. RangeId: numeric min/max range. Random: modulo-based approximate distribution. DBPartition: one stream per native table partition, biggest first, for SQL Server (mssql, msoledbsql), PostgreSQL (pgsql, pgcopy), Oracle (oraodp), MySQL (mysql), Teradata (teradata, row partitioning only), their adbc_* counterparts and Db2 for LUW range partitioning (adbc_db2, 1.0+); needs schema and table (no query), no key; an unpartitioned table falls back to a single stream (FastTransfer 0.18+). Timepartition: one stream per year, month, day or ISO week of a date column, biggest first; distribute_key_column is a tuple such as '(order_date,year,month)'; works with a table or a query (FastTransfer 0.18+). None: single-threaded. Call `fasttransfer_info` with action='parallelism' if unsure.",
                                 "default": "None",
                             },
                             "distribute_key_column": {
@@ -244,8 +247,13 @@ def create_tools(
                             "load_mode": {
                                 "type": "string",
                                 "enum": [e.value for e in LoadMode],
-                                "description": "Load mode. Append: add rows to existing data (safe, default). Truncate: delete all existing rows before loading (use when you want a full refresh). Choose Truncate for idempotent full-table reloads; choose Append for incremental loads.",
+                                "description": "Load mode. Append: add rows to existing data (safe, default). Truncate: delete all existing rows before loading (use when you want a full refresh). Create (FastTransfer 1.1+): create the target table from the source when it does not exist, then load it; when it exists (name exactly as typed) it is truncated and loaded, its structure kept; a table that exists only in another case is an error. The created table has the column names and order of the source, every column nullable, no key, index or constraint; the target schema must exist. Replace: alias of Create from 1.1 (before 1.1 it behaved like Append). Choose Truncate for idempotent full-table reloads of an existing table, Create when the target table may not exist yet, Append for incremental loads.",
                                 "default": "Append",
+                            },
+                            "infer_data_type": {
+                                "type": "string",
+                                "enum": [e.value for e in InferDataType],
+                                "description": "With load_mode Create (FastTransfer 1.1+), how the column types of the created table are derived; ignored with a warning with another load mode, and not used when the target table exists. fast (default): from the source metadata, no row is read; a text column with no declared length gets 256 characters (FASTTRANSFER_INFER_DEFAULT_STRING_MAXSIZE, a number or 'max'). allvarchar: every column as text, converted on the source; needs a source whose engine is known (not a generic odbc or oledb source). best: one profiling scan of the source finds the strictest type that holds every value, for Oracle sources and files read through DuckDB (the fast types for the other sources); a row that does not fit later fails the load; FASTTRANSFER_INFER_STRING_MARGIN (characters, or a factor from '2x' to '10x') and FASTTRANSFER_INFER_SAMPLE_PERCENT (above 0, up to 100) tune it. Same engine on both sides: the source types are copied unchanged, except with allvarchar. allvarchar and best rewrite the source query: with the Physical method give schema and table, not a query.",
                             },
                             "batch_size": {
                                 "type": "integer",
@@ -284,7 +292,7 @@ def create_tools(
                             },
                             "license_path": {
                                 "type": "string",
-                                "description": "Path or URL of the FastTransfer license file, passed with --license. FastTransfer 0.18.2+ has no trial mode and does not run without a license (exit code 99; the free 30-day trial is a license file). Without license_path it looks for FastTransfer.lic in the current directory, then next to the binary. A MigratorXpress license file issued from 2026-10-26 also holds the FastTransfer license. The adbc_* types (1.0+) also need the ARPE ADBC DRIVER license block: FastTransfer hands it to the drivers when the same file holds it; without one the run exits 99.",
+                                "description": "Path or URL of the FastTransfer license file, passed with --license. FastTransfer 0.18.2+ has no trial mode and does not run without a license (exit code 99; the free 30-day trial is a license file). Without license_path it looks for FastTransfer.lic in the current directory, then next to the binary. A MigratorXpress license file issued from 2026-10-26 also holds the FastTransfer license. The adbc_* types (1.0+) also need the ARPE ADBC DRIVER license block: FastTransfer hands it to the drivers when the same file holds it; without one the run exits 99. A backup source (1.1+) loads an adbc_* target, so the same block is needed.",
                             },
                         },
                     },
@@ -784,10 +792,11 @@ def create_tools(
         response.extend(
             [
                 "## Notes:",
-                "- All combinations support both Append and Truncate load modes",
+                "- All combinations support the Append and Truncate load modes; `Create` (FastTransfer 1.1+, `Replace` is its alias) creates the target table from the source when it does not exist, with `infer_data_type` fast, allvarchar or best. It is not tested yet with ClickHouse, Netezza or SAP HANA, with Teradata as a target, or with a backup source",
                 "- Parallelism method availability depends on source database type",
                 "- `Physical` (FastTransfer 1.0+) splits on the physical row location of PostgreSQL, Oracle, SQL Server and Netezza sources; other sources use a key-based method",
                 "- ADBC (FastTransfer 1.0+): the `adbc_*` types need ADBC on both ends, an `adbc_*` source with an `adbc_*` target, and are never mixed with a native type. Windows x64 and Linux x64 only. Db2 is a target only through `adbc_db2`; file imports (`duckdbstream`) use a native target",
+                "- Backup files (FastTransfer 1.1+): `backup_mssql` (SQL Server `.bak`) and `backup_rman` (Oracle RMAN backup sets) are read without restoring them and without a database, into an `adbc_*` target only. `server` is the directory of the backup files, `database` their names or patterns separated by `;`. Methods `None` and `Physical` only. Windows x64 and Linux x64 only",
             ]
         )
 
@@ -837,6 +846,8 @@ def create_tools(
 
             if suggestion['method'] in ("Ntile", "DataDriven", "RangeId", "Random"):
                 response.append("- `distribute_key_column`: your key column name")
+            elif request.source_type.lower() in BACKUP_TYPES:
+                response.append("- source `schema` and `table` (or a `query` limited to a column list of one table)")
             elif suggestion['method'] in ("Physical", "Ctid", "Rowid", "Physloc"):
                 response.append("- source `schema` and `table` (a `query` can be added to filter the table)")
 
@@ -975,6 +986,12 @@ def create_tools(
             ),
         }
         db_tips["pgcopy"] = db_tips["pgsql"]
+        # Backup files (FastTransfer 1.1+): no SQL engine to split them
+        db_tips["backup_mssql"] = db_tips["backup_rman"] = (
+            "- **Recommended parallelism**: `Physical` (resolved to `Pages`): each of the `degree` streams reads one "
+            "slice of the table (pages of a rowstore, rowgroups of a columnstore, ranges of Oracle blocks)\n"
+            "- `None` reads the table in one stream; every other method is refused (a backup has no SQL engine)"
+        )
         # Accepted for the physical split from FastTransfer 1.0 only
         if physical_ok:
             db_tips["msoledbsql"] = db_tips["mssql"]
@@ -992,6 +1009,10 @@ def create_tools(
             "`Ntile` on a date or timestamp key and `Ntile` / `DataDriven` on a key holding NULLs left rows out "
             "without an error: use a numeric NOT NULL key there, or upgrade"
         )
+
+        if source_type in BACKUP_TYPES:
+            # Timepartition, DBPartition and the key-based methods do not apply
+            partition_tip = "- No key column, no `distribute_key_column`: a backup is split by the driver"
 
         db_tip = db_tips.get(source_type) or db_tips.get(native_source, (
             "- Call `fasttransfer_info` with action='parallelism' with your table characteristics for a specific recommendation"
@@ -1011,9 +1032,10 @@ def create_tools(
             "Before 1.0 the merge of the work tables fails on this target: nothing is loaded and the exit code is still 0"
         )
         pgcopy_limitation = (
-            "- Known limitation (FastTransfer 1.0 and earlier): from a source that is not `pgcopy`, this target writes some "
-            "values wrong without an error: fractional seconds are lost on `time` / `timestamp`, `timestamptz` can be "
-            "shifted by the server time zone, `bytea` arrives as the text `System.Byte[]`, `inet` loses its prefix. "
+            "- Known limitation: from a source that is not `pgcopy`, this target writes some "
+            "values wrong without an error: `timestamptz` can be shifted by the server time zone, `inet` loses its prefix, "
+            "and, on FastTransfer 1.0 and earlier (fixed in 1.1), fractional seconds are lost on `time` / `timestamp` and "
+            "`bytea` arrives as the text `System.Byte[]`. "
             "For tables holding such columns use `pgcopy` → `pgcopy`, or `adbc_*` on both ends, and compare the values"
         )
 
@@ -1049,8 +1071,9 @@ def create_tools(
                 "- PostgreSQL `infinity` dates and timestamps are copied exactly only from an `adbc_pgsql` source"
             ),
             "adbc_db2": (
-                "- Parallel loads at volume can fail with SQLCODE -911 (lock escalation between the streams): use method `None`, "
-                "or a `connect_string` with `adbc.arpedb2.ingest.commit_interval_rows=50000`\n"
+                "- FastTransfer 1.0: parallel loads at volume can fail with SQLCODE -911 (lock escalation between the streams): "
+                "use method `None`, or a `connect_string` with `adbc.arpedb2.ingest.commit_interval_rows=50000`. "
+                "From 1.1 each stream of a parallel load commits every 50,000 rows\n"
                 "- Known limitations: an Oracle `NUMBER` into a Db2 `BIGINT`, and `DECFLOAT` columns; test on a sample"
             ),
             "adbc_teradata": (
@@ -1060,11 +1083,69 @@ def create_tools(
 
         target_tip = target_tips.get(target_type, "")
 
+        # Backup sources (FastTransfer 1.1+)
+        source_is_backup = source_type in BACKUP_TYPES
+        backup_tip = ""
+        if source_is_backup:
+            files = (
+                "the full backup, its differentials and every stripe, e.g. `mydb_full.bak;mydb_diff_*.bak`"
+                if source_type == "backup_mssql"
+                else "`*` and `?` in a name, `**` for any number of directories, a directory standing for its files, "
+                "e.g. `l0;l1/**`"
+            )
+            backup_tip = (
+                "- FastTransfer 1.1+: the backup files are read without restoring them and without a database "
+                + ("(SQL Server full and differential backups, compressed, striped, encrypted or TDE ones included)"
+                   if source_type == "backup_mssql"
+                   else "(Oracle RMAN backup sets: full, level 0 and incremental level 1 to 4)")
+                + ". Windows x64 and Linux x64 only\n"
+                "- The target must be an `adbc_*` type (the backup drivers return Arrow data); another target is refused "
+                "before anything runs\n"
+                f"- `server` is the directory of the backup files, `database` the file names or patterns in it, separated by `;`: {files}. "
+                "An entry that matches nothing stops the run\n"
+                + ("- Encrypted backup: `user` is the private key file of the certificate (`.pvk`, `.pfx`, PEM...), "
+                   "`password` its password\n" if source_type == "backup_mssql" else "")
+                + "- Source: `schema` and `table`, or a `query` of the form `SELECT * | col [, col...] FROM [schema.]table`"
+                + (" (`TOP n` accepted)" if source_type == "backup_mssql" else "")
+                + "; no WHERE, no join\n"
+                "- The latest version the files hold is read (full + differential, level 0 + incrementals). A backup that "
+                "could be the newest and cannot be used stops the run with the target untouched, `Truncate` included. "
+                "`FASTTRANSFER_BACKUP_RESTORE_MODE=best_effort` reads the newest usable version instead; "
+                "`FASTTRANSFER_BACKUP_RESTORE_POINT=full` reads the last full (or level 0) backup only\n"
+                "- The first read indexes each backup (minutes on a large compressed one) and saves the index for the next runs; "
+                "`FASTTRANSFER_INDEX_DIR` (a fully qualified path) sets its directory\n"
+                "- Driver options (`adbc.arpemsbackup.*` / `adbc.arpeorabackup.*`) go in a `connect_string`, which replaces "
+                "`server` / `user` / `password` and wins over the environment variables"
+            )
+
         # ADBC connection types (FastTransfer 1.0+)
         source_is_adbc = source_type in ADBC_TYPES
         target_is_adbc = target_type in ADBC_TYPES
         adbc_tip = ""
-        if source_is_adbc != target_is_adbc:
+        if source_is_backup:
+            if not target_is_adbc:
+                adbc_tip = (
+                    f"- **This pair is refused**: a backup source (`{source_type}`) needs an `adbc_*` target "
+                    f"(adbc_mssql, adbc_pgsql, adbc_oracle, adbc_netezza, adbc_db2 or adbc_teradata), not `{target_type}`"
+                )
+            else:
+                adbc_tip = (
+                    "- ADBC target (bundled Arpe ADBC drivers). Windows x64 and Linux x64 only (not Linux ARM64)\n"
+                    "- License: the drivers need the ARPE ADBC DRIVER block. FastTransfer hands it over when the `license_path` "
+                    "file holds it next to the FASTTRANSFER block; without one the run exits 99\n"
+                    "- Target `schema` and `table` are used exactly as typed: write them in their stored case "
+                    "(`ORDERS` on Oracle, Db2 and Teradata; `orders` on PostgreSQL). The target table must exist, "
+                    "unless `load_mode` is `Create`\n"
+                    + (
+                        "- This target negotiates TLS by default: against a server without TLS, set the "
+                        "`FASTTRANSFER_ADBC_SSLMODE` environment variable (`disable`, `prefer`, `require`, "
+                        "`verify-ca` or `verify-full`)\n"
+                        if target_type in ("adbc_pgsql", "adbc_netezza")
+                        else ""
+                    )
+                    + "- `use_work_tables` is refused and `batch_size` has no effect"
+                )
+        elif source_is_adbc != target_is_adbc:
             adbc_tip = (
                 f"- **This pair is refused**: ADBC connection types (adbc_*) cannot be mixed with other types "
                 f"(source `{source_type}`, target `{target_type}`). Use `adbc_*` on both the source and the target, or on neither. "
@@ -1077,7 +1158,11 @@ def create_tools(
                 "- License: the drivers need the ARPE ADBC DRIVER block. FastTransfer hands it over when the `license_path` "
                 "file holds it next to the FASTTRANSFER block; without one the run exits 99\n"
                 "- Target `schema` and `table` are used exactly as typed: write them in their stored case "
-                "(`ORDERS` on Oracle, Db2 and Teradata; `orders` on PostgreSQL). The target table must exist\n"
+                "(`ORDERS` on Oracle, Db2 and Teradata; `orders` on PostgreSQL). The target table must exist, "
+                "unless `load_mode` is `Create` (FastTransfer 1.1+)\n"
+                "- `adbc_pgsql` and `adbc_netezza` negotiate TLS by default: against a server without TLS, set the "
+                "`FASTTRANSFER_ADBC_SSLMODE` environment variable (`disable`, `prefer`, `require`, `verify-ca` or "
+                "`verify-full`; FastTransfer 1.1+). An `sslmode` in the `connect_string` wins\n"
                 "- Connect with `server` / `database` / `user` / `password` (or `trusted_auth`, not on Netezza); "
                 "a `connect_string` uses the driver's `uri=...` form, not ADO.NET keywords\n"
                 "- `use_work_tables` is refused and `batch_size` has no effect\n"
@@ -1105,6 +1190,23 @@ def create_tools(
             "Call `fasttransfer_preview_transfer` with your source, target, and options. It validates both source and target parameters while building the command.",
             "",
         ]
+
+        response.append("### Load mode")
+        response.append(
+            "- `Append` (default) and `Truncate` need an existing target table. `Create` (FastTransfer 1.1+; `Replace` is its alias) "
+            "creates it from the source when it does not exist, and truncates it when it exists\n"
+            "- With `Create`, `infer_data_type` sets how the column types are derived: `fast` (default, from the source metadata), "
+            "`allvarchar` (every column as text) or `best` (profiling scan, Oracle sources and files read through DuckDB). "
+            "The created table has no key, index or constraint, and the target schema must exist"
+            + ("\n- MySQL target: it must be in strict mode, and a table above the 65,535-byte row limit is not created"
+               if target_type == "mysqlbulk" else "")
+        )
+        response.append("")
+
+        if backup_tip:
+            response.append("### Backup source")
+            response.append(backup_tip)
+            response.append("")
 
         if adbc_tip:
             response.append("### ADBC connection types")
@@ -1169,7 +1271,33 @@ def _build_transfer_explanation(request: TransferRequest) -> str:
     parts = []
 
     # Source
-    if request.source.file_input:
+    source_is_backup = request.source.type.lower() in BACKUP_TYPES
+    if source_is_backup:
+        what = (
+            "SQL Server backup files" if request.source.type.lower() == "backup_mssql"
+            else "Oracle RMAN backup sets"
+        )
+        if request.source.query:
+            read = "the query"
+        elif request.source.table:
+            read = "table " + (
+                f"{request.source.schema}.{request.source.table}"
+                if request.source.schema
+                else request.source.table
+            )
+        else:
+            read = f"the query of file '{request.source.file_input}'"
+        where = (
+            "the files of the connect_string"
+            if request.source.connect_string
+            else f"files '{request.source.database}' in directory '{request.source.server or '.'}'"
+        )
+        parts.append(
+            f"Read {read} from {what} ({request.source.type}), without restoring them: {where}. "
+            f"The latest version the files hold is read; the first read indexes each backup "
+            f"(FASTTRANSFER_INDEX_DIR sets the index directory)"
+        )
+    elif request.source.file_input:
         parts.append(
             f"Import file '{request.source.file_input}' via {request.source.type} into {request.source.database}"
         )
@@ -1217,7 +1345,19 @@ def _build_transfer_explanation(request: TransferRequest) -> str:
         )
 
     # Load mode
-    if request.options.load_mode.value == "Truncate":
+    if request.options.load_mode.value in CREATE_LOAD_MODES:
+        infer = (
+            request.options.infer_data_type.value
+            if request.options.infer_data_type
+            else "fast"
+        )
+        alias = " (Replace is an alias of Create)" if request.options.load_mode.value == "Replace" else ""
+        parts.append(
+            f"Mode: CREATE{alias}: the target table is created from the source when it does not "
+            f"exist (column types: {infer}), then loaded; when it exists it is TRUNCATED "
+            f"(all existing data will be deleted) and loaded, its structure kept"
+        )
+    elif request.options.load_mode.value == "Truncate":
         parts.append(
             "Mode: TRUNCATE target table before loading (all existing data will be deleted)"
         )
@@ -1240,7 +1380,10 @@ def _build_transfer_explanation(request: TransferRequest) -> str:
             )
         elif request.options.method.value == "Physical":
             strategy = PHYSICAL_STRATEGIES.get(native_source_type(request.source.type))
-            parallel_desc += f" (physical row location, resolved to {strategy})"
+            if strategy == "Pages":
+                parallel_desc += " (resolved to Pages: one slice of the table per stream)"
+            else:
+                parallel_desc += f" (physical row location, resolved to {strategy})"
         elif request.options.distribute_key_column:
             parallel_desc += f" on column '{request.options.distribute_key_column}'"
         parallel_desc += f" with degree {request.options.degree}"

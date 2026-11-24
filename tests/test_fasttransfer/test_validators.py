@@ -51,9 +51,10 @@ class TestSourceConnectionType:
         with pytest.raises(ValueError):
             SourceConnectionType("nzcopy")
 
-    def test_all_22_source_types(self):
-        """16 native source types and the 6 adbc_* types of FastTransfer 1.0."""
-        assert len(SourceConnectionType) == 22
+    def test_all_24_source_types(self):
+        """16 native source types, the 6 adbc_* types of FastTransfer 1.0 and the 2 backup types of 1.1."""
+        assert len(SourceConnectionType) == 24
+        assert len([t for t in SourceConnectionType if t.value.startswith("backup_")]) == 2
         assert len([t for t in SourceConnectionType if t.value.startswith("adbc_")]) == 6
 
 

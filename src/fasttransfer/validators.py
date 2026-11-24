@@ -38,6 +38,10 @@ class SourceConnectionType(str, Enum):
     ADBC_NETEZZA = "adbc_netezza"  # ArpeNetezza
     ADBC_DB2 = "adbc_db2"  # ArpeDb2, Db2 for LUW (no native counterpart)
     ADBC_TERADATA = "adbc_teradata"  # ArpeTeradata
+    # Backup files read without restoring them (FastTransfer 1.1+), through
+    # the bundled backup drivers. Source only, and only with an adbc_* target.
+    BACKUP_MSSQL = "backup_mssql"  # SQL Server .bak files (ArpeMSBackup)
+    BACKUP_RMAN = "backup_rman"  # Oracle RMAN backup sets (ArpeOraBackup)
 
 
 class TargetConnectionType(str, Enum):
@@ -98,8 +102,91 @@ ADBC_TYPES = frozenset([*ADBC_NATIVE_TYPES, "adbc_db2"])
 # ADBC types whose driver has no integrated / Kerberos logon.
 NO_TRUSTED_AUTH_TYPES = frozenset(["adbc_netezza"])
 
-# Native connection types per Physical strategy (FastTransfer 1.0+). Physical
-# is resolved from the source connection type; other sources are refused.
+# Backup source types (FastTransfer 1.1+): --sourceserver is the directory of
+# the backup files and --sourcedatabase their names or patterns. The drivers
+# return Arrow batches, which only an adbc_* target loads.
+BACKUP_TYPES = frozenset(["backup_mssql", "backup_rman"])
+
+# Parallel methods of a backup source: a backup has no SQL engine to split it.
+BACKUP_METHODS = ("None", "Physical")
+
+# --query accepted by the backup source types: a column list of one table, no
+# WHERE, no join. backup_mssql also takes TOP n.
+_IDENT = r'(?:\[[^\]]+\]|"[^"]+"|[A-Za-z_][\w$#@]*)'
+
+
+def _backup_query_re(top: bool, max_qualifiers: int) -> "re.Pattern[str]":
+    top_clause = r"(?:TOP\s+(?:\d+|\(\s*\d+\s*\))\s+)?" if top else ""
+    return re.compile(
+        rf"^\s*SELECT\s+{top_clause}(?:\*|{_IDENT}(?:\s*,\s*{_IDENT})*)\s+FROM\s+"
+        rf"{_IDENT}(?:\s*\.\s*{_IDENT}){{0,{max_qualifiers}}}\s*;?\s*$",
+        re.IGNORECASE | re.DOTALL,
+    )
+
+
+# The documented form is [schema.]table for both types. One more qualifier is
+# let through for backup_rman (container.owner.table, which the same driver
+# takes in FastBCP): FastTransfer's documentation does not rule it out.
+BACKUP_QUERY_FORMS = {
+    "backup_mssql": (
+        _backup_query_re(top=True, max_qualifiers=1),
+        "SELECT [TOP n] * | col1, col2, ... FROM [schema.]table",
+    ),
+    "backup_rman": (
+        _backup_query_re(top=False, max_qualifiers=2),
+        "SELECT * | col1, col2, ... FROM [schema.]table",
+    ),
+}
+
+# Connection types whose --sourceserver / --targetserver names a SQL Server
+# (FastTransfer 1.1 checks its syntax before any connection); oledb counts
+# with a SQL Server provider only.
+MSSQL_SERVER_TYPES = frozenset(["mssql", "msbulk", "msoledbsql", "adbc_mssql"])
+MSSQL_OLEDB_PROVIDER_PREFIXES = ("MSOLEDBSQL", "SQLOLEDB", "SQLNCLI")
+_INSTANCE_COLON_PORT = re.compile(r"^(?P<server>[^:,\\]+\\[^:,\\]+):(?P<port>\d{1,5})$")
+_HOST_COLON_PORT = re.compile(r"^(?:\[[^\]]+\]|[^:,\\\[\]\s]+):\d{1,5}$")
+_MSSQL_SERVER_FORMS = "host, host:port, host,port, host\\INSTANCE or host\\INSTANCE,port"
+
+
+def is_mssql_server_type(connection_type: str, provider: Optional[str] = None) -> bool:
+    """Whether the server of this connection type is a SQL Server name."""
+    connection_type = (connection_type or "").lower()
+    if connection_type in MSSQL_SERVER_TYPES:
+        return True
+    return connection_type == "oledb" and (provider or "").strip().upper().startswith(
+        MSSQL_OLEDB_PROVIDER_PREFIXES
+    )
+
+
+def check_mssql_server(server: Optional[str]) -> Optional[str]:
+    """Why FastTransfer 1.1 refuses this SQL Server name, or None when it is accepted."""
+    name = (server or "").strip()
+    if name[:4].lower() == "tcp:":
+        rest = name[4:].strip()
+        match = _INSTANCE_COLON_PORT.match(rest)
+        instead = f"{match.group('server')},{match.group('port')}" if match else rest
+        return (
+            f"the tcp: prefix is not accepted (the connection is TCP anyway): use "
+            f"'{instead}'. Accepted forms: {_MSSQL_SERVER_FORMS}"
+        )
+    match = _INSTANCE_COLON_PORT.match(name)
+    if match:
+        return (
+            f"a port after a named instance is written with a comma: use "
+            f"'{match.group('server')},{match.group('port')}'. "
+            f"Accepted forms: {_MSSQL_SERVER_FORMS}"
+        )
+    return None
+
+
+def is_host_colon_port(server: Optional[str]) -> bool:
+    """host:port (a name, an IPv4 address or a bracketed IPv6 address)."""
+    return bool(_HOST_COLON_PORT.match((server or "").strip()))
+
+
+# Connection types per Physical strategy (FastTransfer 1.0+; Pages for the
+# backup sources, 1.1+). Physical is resolved from the source connection type;
+# other sources are refused.
 PHYSICAL_STRATEGIES = {
     "pgsql": "Ctid",
     "pgcopy": "Ctid",
@@ -109,6 +196,8 @@ PHYSICAL_STRATEGIES = {
     "nzsql": "NZDataSlice",
     "nzbulk": "NZDataSlice",
     "nzoledb": "NZDataSlice",
+    "backup_mssql": "Pages",
+    "backup_rman": "Pages",
 }
 
 # Methods that split a table on its physical row location: Physical and the
@@ -165,6 +254,23 @@ class LoadMode(str, Enum):
 
     APPEND = "Append"  # Add to existing data
     TRUNCATE = "Truncate"  # Clear before loading
+    # FastTransfer 1.1+: create the target table from the source when it does
+    # not exist, then load it; truncate and load it when it exists.
+    CREATE = "Create"
+    # Alias of Create from 1.1 (it behaved like Append before).
+    REPLACE = "Replace"
+
+
+# Load modes that create the target table when it is missing (FastTransfer 1.1+)
+CREATE_LOAD_MODES = frozenset(["Create", "Replace"])
+
+
+class InferDataType(str, Enum):
+    """How load mode Create derives the column types (FastTransfer 1.1+)."""
+
+    FAST = "fast"  # From the source metadata, no row is read (default)
+    ALLVARCHAR = "allvarchar"  # Every column as text
+    BEST = "best"  # Profiling scan of the source (Oracle and DuckDB sources)
 
 
 class MapMethod(str, Enum):
@@ -222,6 +328,19 @@ class ConnectionConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def validate_mssql_server(self):
+        """SQL Server server names FastTransfer 1.1 refuses before any connection."""
+        if (
+            self.server
+            and not self.connect_string
+            and is_mssql_server_type(self.type, self.provider)
+        ):
+            error = check_mssql_server(self.server)
+            if error:
+                raise ValueError(f"server '{self.server}' ({self.type}): {error}")
+        return self
+
+    @model_validator(mode="after")
     def validate_mutual_exclusivity(self):
         """Validate mutually exclusive connection parameters."""
         # connect_string excludes individual connection params
@@ -275,6 +394,10 @@ class ConnectionConfig(BaseModel):
     @model_validator(mode="after")
     def validate_authentication(self):
         """Ensure either credentials or trusted auth is provided."""
+        # Backup files have no database login (user / password are the private
+        # key of an encrypted backup_mssql backup)
+        if self.type.lower() in BACKUP_TYPES:
+            return self
         if not self.trusted_auth and not self.connect_string and not self.dsn:
             if not self.user:
                 raise ValueError(
@@ -297,7 +420,12 @@ class TransferOptions(BaseModel):
         description="Parallelism degree: 0=auto, >0=fixed, <0=CPU adaptive (e.g., -2=half CPUs)",
     )
     load_mode: LoadMode = Field(
-        LoadMode.APPEND, description="Load mode: Append or Truncate"
+        LoadMode.APPEND,
+        description="Load mode: Append, Truncate, Create (1.1+) or Replace (alias of Create)",
+    )
+    infer_data_type: Optional[InferDataType] = Field(
+        None,
+        description="With load mode Create, how the column types are derived: fast, allvarchar or best",
     )
     batch_size: Optional[int] = Field(
         None, ge=1, description="Batch size for bulk copy operations"
@@ -391,12 +519,14 @@ class TransferRequest(BaseModel):
                 "Source must specify either 'table', 'query', or 'file_input'"
             )
         # The physical-location methods split the table itself: a query given
-        # with the table filters it (FastTransfer sends both).
+        # with the table filters it (FastTransfer sends both). Not on a backup
+        # source, whose query cannot filter.
         table_with_filter = (
             has_table
             and has_query
             and not has_file_input
             and self.options.method.value in PHYSICAL_METHODS
+            and self.source.type.lower() not in BACKUP_TYPES
         )
         if count > 1 and not table_with_filter:
             raise ValueError(
@@ -409,9 +539,26 @@ class TransferRequest(BaseModel):
     @model_validator(mode="after")
     def validate_adbc_pairing(self):
         """ADBC connection types work only as a pair (FastTransfer 1.0+)."""
-        source_is_adbc = self.source.type.lower() in ADBC_TYPES
-        target_is_adbc = self.target.type.lower() in ADBC_TYPES
-        if source_is_adbc != target_is_adbc:
+        source_type = self.source.type.lower()
+        target_type = self.target.type.lower()
+        source_is_adbc = source_type in ADBC_TYPES
+        target_is_adbc = target_type in ADBC_TYPES
+        if target_type in BACKUP_TYPES:
+            raise ValueError(
+                f"{self.target.type} is a source connection type only: a backup "
+                f"cannot be a target"
+            )
+        # Backup sources (FastTransfer 1.1+) return Arrow batches, which only
+        # an ADBC target loads
+        if source_type in BACKUP_TYPES:
+            if not target_is_adbc:
+                raise ValueError(
+                    f"Source type {self.source.type} reads a backup, which returns "
+                    f"Arrow batches: the target must be an ADBC type (adbc_mssql, "
+                    f"adbc_pgsql, adbc_oracle, adbc_netezza, adbc_db2 or "
+                    f"adbc_teradata), not {self.target.type}"
+                )
+        elif source_is_adbc != target_is_adbc:
             raise ValueError(
                 f"ADBC connection types (adbc_*) cannot be mixed with other types: "
                 f"source is {self.source.type}, target is {self.target.type}. "
@@ -422,6 +569,29 @@ class TransferRequest(BaseModel):
                 f"use_work_tables is not available with an ADBC target "
                 f"({self.target.type}): the parallel streams load the target table directly"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_backup_source(self):
+        """Backup sources (FastTransfer 1.1+): methods None or Physical, restricted query."""
+        source_type = self.source.type.lower()
+        if source_type not in BACKUP_TYPES:
+            return self
+        method = self.options.method.value
+        if method not in BACKUP_METHODS:
+            raise ValueError(
+                f"{method} method is not available with source type "
+                f"{self.source.type}: a backup has no SQL engine to split it ==> "
+                f"use method None or Physical"
+            )
+        if self.source.query:
+            pattern, form = BACKUP_QUERY_FORMS[source_type]
+            if not pattern.match(self.source.query):
+                raise ValueError(
+                    f"With {self.source.type}, 'query' is limited to {form} "
+                    f"(no WHERE, no join, no other SQL); give 'schema' and 'table' "
+                    f"to read the whole table"
+                )
         return self
 
     @model_validator(mode="after")
@@ -490,7 +660,7 @@ class TransferRequest(BaseModel):
             raise ValueError(
                 f"Method 'Physical' is not supported for source connection type "
                 f"'{self.source.type}': supported sources are PostgreSQL, Oracle, "
-                f"SQL Server and Netezza"
+                f"SQL Server, Netezza, and the SQL Server and Oracle RMAN backups"
             )
 
         # Ctid, Rowid and Physloc split the table itself: schema and table are

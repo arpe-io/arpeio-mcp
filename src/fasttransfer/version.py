@@ -6,6 +6,7 @@ to their known capabilities (supported source/target types, parallelism
 methods, and feature flags).
 """
 
+import re
 from dataclasses import dataclass, replace
 from typing import Dict, FrozenSet, Optional
 
@@ -26,6 +27,11 @@ class VersionCapabilities:
     supports_license_path: bool = False
     # 0.18.2+: no trial mode, a licence file is always required
     requires_license: bool = False
+    # 1.1+: --loadmode Create (and Replace as its alias) and --inferdatatype
+    supports_create_load_mode: bool = False
+    # 1.1+: host:port accepted as a SQL Server --sourceserver / --targetserver
+    # by the native types (handed to the driver as host,port)
+    supports_mssql_host_colon_port: bool = False
 
 
 # Parallel methods added after 0.16, with the first version that accepts them
@@ -48,8 +54,23 @@ ADBC_TYPES = frozenset(
 )
 ADBC_MIN_VERSION = "1.0.0.0"
 
+# Backup source types (SQL Server .bak files, Oracle RMAN backup sets), added
+# in FastTransfer 1.1, with --loadmode Create and --inferdatatype
+BACKUP_TYPES = frozenset(["backup_mssql", "backup_rman"])
+BACKUP_MIN_VERSION = "1.1.0.0"
+CREATE_MIN_VERSION = "1.1.0.0"
+CREATE_LOAD_MODES = frozenset(["Create", "Replace"])
+
+# Native connection types whose server is a SQL Server name: host:port is
+# accepted from 1.1 (adbc_mssql took it from 1.0)
+MSSQL_NATIVE_SERVER_TYPES = frozenset(["mssql", "msbulk", "msoledbsql"])
+
 # Engine-specific methods replaced by Physical in FastTransfer 1.0 (removed in 2.0)
 DEPRECATED_PHYSICAL_METHODS = frozenset(["Ctid", "Rowid", "Physloc", "NZDataSlice"])
+PHYSICAL_METHODS = DEPRECATED_PHYSICAL_METHODS | {"Physical"}
+
+# host:port, host a name, an IPv4 address or a bracketed IPv6 address
+_HOST_COLON_PORT = re.compile(r"^(?:\[[^\]]+\]|[^:,\\\[\]\s]+):\d{1,5}$")
 
 # Targets whose --useworktables merge failed before 1.0: nothing was loaded
 # and the run still exited 0.
@@ -421,6 +442,21 @@ VERSION_REGISTRY["1.0.0.0"] = VersionCapabilities(
     requires_license=True,
 )
 
+# 1.1.0: --loadmode Create (creates the target table from the source when it
+# does not exist, truncates it when it exists; Replace is its alias, it behaved
+# like Append before) with --inferdatatype allvarchar | fast | best. Backup
+# source types backup_mssql and backup_rman, to an adbc_* target, with the
+# methods None and Physical (resolved to Pages). FASTTRANSFER_ADBC_SSLMODE for
+# adbc_netezza / adbc_pgsql. SQL Server server names: host:port accepted, the
+# tcp: prefix and host\INSTANCE:port refused before any connection. Same target
+# types and parallel methods as 1.0.0.
+VERSION_REGISTRY["1.1.0.0"] = replace(
+    VERSION_REGISTRY["1.0.0.0"],
+    source_types=VERSION_REGISTRY["1.0.0.0"].source_types | BACKUP_TYPES,
+    supports_create_load_mode=True,
+    supports_mssql_host_colon_port=True,
+)
+
 
 def check_version_compatibility(
     params: dict,
@@ -457,6 +493,82 @@ def check_version_compatibility(
                 f"Connection type '{conn_type}' ({side}) requires FastTransfer "
                 f"{ADBC_MIN_VERSION}+, but detected version is {ver_str}"
             )
+
+    # Backup source types (FastTransfer 1.1+)
+    if source_type in BACKUP_TYPES and source_type not in capabilities.source_types:
+        warnings.append(
+            f"Connection type '{source_type}' (source) requires FastTransfer "
+            f"{BACKUP_MIN_VERSION}+, but detected version is {ver_str}"
+        )
+
+    # --loadmode Create and --inferdatatype (FastTransfer 1.1+)
+    load_mode = options.get("load_mode")
+    infer = options.get("infer_data_type")
+    creates = load_mode in CREATE_LOAD_MODES
+    if not capabilities.supports_create_load_mode:
+        if load_mode == "Create":
+            warnings.append(
+                f"Load mode 'Create' requires FastTransfer {CREATE_MIN_VERSION}+, but "
+                f"detected version is {ver_str}: create the target table first and "
+                f"use 'Truncate' or 'Append'"
+            )
+        elif load_mode == "Replace":
+            warnings.append(
+                f"Load mode 'Replace' behaves like 'Append' before FastTransfer "
+                f"{CREATE_MIN_VERSION} (detected version is {ver_str}): the target "
+                f"table is neither created nor truncated"
+            )
+        if infer:
+            warnings.append(
+                f"infer_data_type (--inferdatatype) requires FastTransfer "
+                f"{CREATE_MIN_VERSION}+, but detected version is {ver_str}"
+            )
+    elif infer and not creates:
+        warnings.append(
+            f"infer_data_type '{infer}' is only used with load mode 'Create': "
+            f"FastTransfer ignores it, with a warning, with load mode "
+            f"'{load_mode or 'Append'}'"
+        )
+    elif creates and infer == "allvarchar" and source_type in ("odbc", "oledb"):
+        warnings.append(
+            f"infer_data_type 'allvarchar' needs a source whose engine is known, "
+            f"not a generic {source_type} source: when the target table has to be "
+            f"created, use 'fast' or a native connection type"
+        )
+    elif (
+        creates
+        and infer in ("allvarchar", "best")
+        and source.get("query")
+        and options.get("method") in PHYSICAL_METHODS
+    ):
+        warnings.append(
+            f"infer_data_type '{infer}' rewrites the source query, which FastTransfer "
+            f"can refuse for a query read with the Physical method (it must be a "
+            f"single SELECT listing its columns): give the source schema and table "
+            f"without a query, or use 'fast'"
+        )
+
+    # SQL Server host:port: before 1.1 the native types took it for a host name
+    # and failed after the connect timeout (adbc_mssql accepts it from 1.0)
+    if not capabilities.supports_mssql_host_colon_port:
+        for side, conn, conn_type in (
+            ("source", source, source_type),
+            ("target", target, target_type),
+        ):
+            server = (conn.get("server") or "").strip()
+            sql_server = conn_type in MSSQL_NATIVE_SERVER_TYPES or (
+                conn_type == "oledb"
+                and (conn.get("provider") or "").strip().upper().startswith(
+                    ("MSOLEDBSQL", "SQLOLEDB", "SQLNCLI")
+                )
+            )
+            if sql_server and not conn.get("connect_string") and _HOST_COLON_PORT.match(server):
+                warnings.append(
+                    f"SQL Server {side} server '{server}' ({conn_type}): the "
+                    f"host:port form requires FastTransfer 1.1.0.0+, but detected "
+                    f"version is {ver_str}, which takes it for a host name and fails "
+                    f"after the connect timeout. Write it 'host,port'"
+                )
 
     # Parallel methods added in FastTransfer 0.18 and 1.0
     method = options.get("method")

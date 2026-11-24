@@ -11,7 +11,12 @@ from typing import Any, Dict, List
 
 from ..base.command_builder import BaseCommandBuilder, ArpeToolError
 from ..base.version_detector import BaseVersionDetector
-from .validators import TransferRequest, ConnectionConfig, native_source_type
+from .validators import (
+    BACKUP_TYPES,
+    ConnectionConfig,
+    TransferRequest,
+    native_source_type,
+)
 from .version import VERSION_REGISTRY, VersionCapabilities
 
 
@@ -163,6 +168,10 @@ class CommandBuilder(BaseCommandBuilder):
         # Load mode
         params.extend(["--loadmode", options.load_mode.value])
 
+        # Type inference of load mode Create (FastTransfer 1.1+)
+        if options.infer_data_type:
+            params.extend(["--inferdatatype", options.infer_data_type.value])
+
         # Batch size
         if options.batch_size:
             params.extend(["--batchsize", str(options.batch_size)])
@@ -212,6 +221,8 @@ class CommandBuilder(BaseCommandBuilder):
             "supports_settings_file": caps.supports_settings_file,
             "supports_license_path": caps.supports_license_path,
             "requires_license": caps.requires_license,
+            "supports_create_load_mode": caps.supports_create_load_mode,
+            "supports_mssql_host_colon_port": caps.supports_mssql_host_colon_port,
         }
 
 
@@ -333,6 +344,17 @@ def get_supported_combinations() -> Dict[str, List[str]]:
             "IBM Db2 for LUW (adbc_db2)",
             "Teradata (adbc_teradata)",
         ],
+        # FastTransfer 1.1+: backup files read without restoring them, by the
+        # bundled backup drivers. Source only; the target is an adbc_* type.
+        "Backup files (backup_mssql: SQL Server .bak; backup_rman: Oracle RMAN "
+        "backup sets; FastTransfer 1.1+, adbc_* target only)": [
+            "SQL Server (adbc_mssql)",
+            "PostgreSQL (adbc_pgsql)",
+            "Oracle (adbc_oracle)",
+            "Netezza (adbc_netezza)",
+            "IBM Db2 for LUW (adbc_db2)",
+            "Teradata (adbc_teradata)",
+        ],
     }
 
 
@@ -366,6 +388,18 @@ def suggest_parallelism_method(
         return {
             "method": "None",
             "explanation": "Table is small - parallelism overhead would likely reduce performance. Use None for best results.",
+        }
+
+    # Backup files (FastTransfer 1.1+): None or Physical (resolved to Pages)
+    if source_lower in BACKUP_TYPES:
+        return {
+            "method": "Physical",
+            "explanation": (
+                "Backup source detected: only None and Physical are available. Physical "
+                "resolves to Pages, each stream reading its own slice of the table "
+                "(pages of a rowstore, rowgroups of a columnstore, ranges of Oracle "
+                "blocks); no key column needed."
+            ),
         }
 
     def physical(engine_method: str, explanation: str, needs_table: bool = True) -> Dict[str, str]:
